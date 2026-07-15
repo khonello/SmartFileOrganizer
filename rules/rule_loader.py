@@ -60,6 +60,14 @@ def _parse_rule(item: dict, *, source: Path) -> Rule:
         match_type = MatchType(item.get("match_type", "filename"))
     except ValueError as exc:
         raise RuleValidationError(f"{source}: {exc}") from exc
+
+    metadata_key = item.get("metadata_key")
+    if match_type is MatchType.METADATA and not metadata_key:
+        raise RuleValidationError(
+            f"{source}: rule {item['rule']!r} has match_type 'metadata' but no "
+            f"'metadata_key' saying which key to match against"
+        )
+
     return Rule(
         rule=item["rule"],
         pattern=item["pattern"],
@@ -67,4 +75,5 @@ def _parse_rule(item: dict, *, source: Path) -> Rule:
         match_type=match_type,
         case_sensitive=bool(item.get("case_sensitive", False)),
         priority=int(item.get("priority", 0)),
+        metadata_key=metadata_key,
     )

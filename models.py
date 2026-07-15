@@ -71,6 +71,9 @@ class Rule:
     match_type: MatchType = MatchType.FILENAME
     case_sensitive: bool = False
     priority: int = 0  # higher evaluated first within a layer
+    # Which metadata key ``pattern`` is tested against, e.g. "author".
+    # Required when match_type is METADATA, unused otherwise.
+    metadata_key: str | None = None
 
 
 @dataclass
