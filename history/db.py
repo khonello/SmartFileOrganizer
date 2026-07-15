@@ -8,7 +8,8 @@ so a whole run can be rolled back together.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from collections.abc import Iterable
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from models import Operation, OperationType
@@ -34,7 +35,13 @@ class HistoryDB:
     """
 
     def __init__(self, path: Path | str) -> None:
-        self.conn = sqlite3.connect(str(path))
+        # The default db lives under %LOCALAPPDATA% (see settings.default_db_path),
+        # which won't exist on first run — sqlite won't create the directory for
+        # us, it just fails to open. Skip for ":memory:" and file: URIs.
+        text = str(path)
+        if text != ":memory:" and not text.startswith("file:"):
+            Path(text).parent.mkdir(parents=True, exist_ok=True)
+        self.conn = sqlite3.connect(text)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(_SCHEMA)
 
@@ -89,8 +96,70 @@ class HistoryDB:
         )
         self.conn.commit()
 
+    def prune(
+        self,
+        retention_days: int,
+        *,
+        now: datetime | None = None,
+        protect_batches: Iterable[str] = (),
+    ) -> int:
+        """Drop operations older than ``retention_days``; return rows deleted.
+
+        Enforces ``Settings.history_retention_days``. ``retention_days=0``
+        disables pruning entirely. ``protect_batches`` shields in-flight batch
+        ids — a batch that has been applied but not yet committed or rolled back
+        still needs its log, and deleting it would strand the user's files in
+        ``after/`` with no record of where they came from.
+
+        Two deliberate choices:
+
+        * **Batches are pruned whole or not at all.** A batch is eligible only
+          once *every* one of its operations is past the cutoff. Deleting half a
+          batch would leave a remnant that :class:`~history.undo_manager.
+          UndoManager` would happily "roll back" — partially, and silently.
+        * **Age is decided in Python, not by SQL.** ``timestamp`` is TEXT
+          isoformat, so ``WHERE timestamp < ?`` compares lexicographically,
+          which only matches chronological order while every row shares an
+          offset. :meth:`log` writes ``datetime.now()`` — naive local — so that
+          holds today, but one aware timestamp (``...+02:00``) would quietly
+          sort wrong and delete live history. Parsing costs one row scan and
+          removes the whole class of bug.
+        """
+        if retention_days <= 0:
+            return 0
+        cutoff = (now or datetime.now()) - timedelta(days=retention_days)
+        protected = set(protect_batches)
+
+        newest: dict[str, datetime] = {}
+        for row in self.conn.execute("SELECT batch_id, timestamp FROM operations"):
+            stamp = _as_naive(datetime.fromisoformat(row["timestamp"]))
+            batch = row["batch_id"]
+            if batch not in newest or stamp > newest[batch]:
+                newest[batch] = stamp
+
+        stale = [
+            batch
+            for batch, stamp in newest.items()
+            if stamp < cutoff and batch not in protected
+        ]
+        if not stale:
+            return 0
+        cur = self.conn.execute(
+            f"DELETE FROM operations WHERE batch_id IN ({','.join('?' * len(stale))})",
+            stale,
+        )
+        self.conn.commit()
+        return cur.rowcount
+
     def close(self) -> None:
         self.conn.close()
+
+
+def _as_naive(stamp: datetime) -> datetime:
+    """Normalize to naive local time so stored and cutoff values are comparable."""
+    if stamp.tzinfo is None:
+        return stamp
+    return stamp.astimezone().replace(tzinfo=None)
 
 
 def _row_to_operation(row: sqlite3.Row) -> Operation:

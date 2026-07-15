@@ -14,7 +14,7 @@ build-backend = "setuptools.build_meta"
 
 # Flat application layout: top-level packages + single-file modules at the root.
 [tool.setuptools]
-py-modules = ["main", "models", "organizer"]
+py-modules = ["main", "models", "organizer", "settings"]
 
 [tool.setuptools.packages.find]
 include = ["core*", "rules*", "history*", "gui*"]
