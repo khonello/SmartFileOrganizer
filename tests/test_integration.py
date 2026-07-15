@@ -17,8 +17,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from history.db import HistoryDB
 from models import OperationType
 from organizer import Organizer
@@ -160,20 +158,13 @@ def test_end_to_end_apply_then_rollback(tmp_path: Path):
     assert _contents_under(folder) == sorted(SAMPLE_FILES.values())
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known bug: apply() moves files into before/ but leaves the original "
-        "(now empty) directory skeleton at the folder root, so rollback's "
-        "promote_children shutil.move(before/work, folder/work) lands *inside* "
-        "the surviving folder/work instead of replacing it -- restoring "
-        "work/reports/deep.txt as work/work/reports/deep.txt. No data is lost "
-        "(see test_end_to_end_apply_then_rollback), but the layout is wrong. "
-        "Remove this marker when apply/rollback prune the empty skeleton."
-    ),
-)
 def test_rollback_restores_nested_layout(tmp_path: Path):
-    """Rollback should put nested files back at their *original* paths."""
+    """Rollback puts nested files back at their *original* paths.
+
+    Apply leaves the originals' directories at the root, so promoting before/
+    back over them has to merge rather than move-into — see
+    ``file_ops.promote_children``.
+    """
     folder = _build_sample_folder(tmp_path)
     original = {
         str(p.relative_to(folder)): p.read_text() for p in _files_under(folder)
@@ -187,3 +178,23 @@ def test_rollback_restores_nested_layout(tmp_path: Path):
         str(p.relative_to(folder)): p.read_text() for p in _files_under(folder)
     }
     assert restored == original
+
+
+def test_commit_merges_into_original_directory_of_same_name(tmp_path: Path):
+    """An original folder sharing a category's name must not nest the result.
+
+    ``Documents/a.txt`` classifies into ``after/Documents/`` while the empty
+    original ``Documents/`` still sits at the root — commit has to merge the
+    two, not produce ``Documents/Documents/a.txt``.
+    """
+    folder = tmp_path / "Downloads"
+    (folder / "Documents").mkdir(parents=True)
+    (folder / "Documents" / "a.txt").write_text("A")
+
+    organizer = Organizer()
+    organizer.apply(folder, organizer.build_plan(folder))
+    organizer.commit(folder)
+
+    assert (folder / "Documents" / "a.txt").read_text() == "A"
+    assert not (folder / "Documents" / "Documents").exists()
+    assert len(_files_under(folder)) == 1

@@ -172,13 +172,28 @@ def promote_children(
 
     Used to offload ``after/``'s contents into the folder root on commit, and
     to restore ``before/``'s contents on cancel.
+
+    Directories are *merged* into an existing counterpart rather than moved
+    into it. Apply stages files, not folders, so the originals' directories
+    survive at the root; a plain move would restore ``work/deep.txt`` as
+    ``work/work/deep.txt``.
     """
     if dry_run:
         return
     src_dir, dst_dir = Path(src_dir), Path(dst_dir)
     dst_dir.mkdir(parents=True, exist_ok=True)
     for child in list(src_dir.iterdir()):
-        shutil.move(str(child), str(dst_dir / child.name))
+        _promote(child, dst_dir / child.name)
+
+
+def _promote(src: Path, dst: Path) -> None:
+    """Move ``src`` onto ``dst``, recursing when both are directories."""
+    if src.is_dir() and dst.is_dir():
+        for child in list(src.iterdir()):
+            _promote(child, dst / child.name)
+        src.rmdir()  # now empty; its contents live under dst
+        return
+    shutil.move(str(src), str(dst))
 
 
 def remove_tree(path: Path | str, *, dry_run: bool = False) -> None:
