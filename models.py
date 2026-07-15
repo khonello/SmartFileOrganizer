@@ -34,6 +34,22 @@ class RuleLayer(str, Enum):
     EXTENSION = "extension"
 
 
+class BatchStatus(str, Enum):
+    """Where one run sits in the before/after lifecycle.
+
+    The run's state lives on *disk*, not in the app: ``APPLIED`` means
+    ``before/`` and ``after/`` are real folders awaiting the user's decision,
+    and it survives closing the app. Only an ``APPLIED`` batch can be undone —
+    ``commit`` discards the originals and moves the copies to the folder root,
+    which is why undoing past that point is impossible rather than merely
+    unimplemented.
+    """
+
+    APPLIED = "applied"  # before/ + after/ on disk, awaiting review
+    COMMITTED = "committed"  # originals discarded — the point of no return
+    ROLLED_BACK = "rolled_back"  # copies discarded, originals restored
+
+
 class OperationType(str, Enum):
     # Apply is copy-based (before/after model): the original is the "before",
     # the copy is the "after". MOVE is used only when discarding the original.
@@ -87,6 +103,28 @@ class ClassificationResult:
     destination: Path
     layer: RuleLayer
     rule_name: str  # which rule fired, for the details panel / traceability
+
+
+@dataclass
+class Batch:
+    """One organization run, and the inputs that produced it.
+
+    ``rules`` is a **snapshot**, not a reference. A run's output is only
+    explicable in terms of the rules that made it, so the rule set is frozen
+    onto the batch: editing a preset afterwards must never rewrite what an
+    older run's trace says it did. Same reasoning for ``collision_strategy``.
+
+    Global preferences (retention, db location) are deliberately *not* here —
+    they are properties of the app, not of a run.
+    """
+
+    batch_id: str
+    folder: Path
+    collision_strategy: CollisionStrategy
+    rules: list[Rule] = field(default_factory=list)
+    preset: str | None = None
+    status: BatchStatus = BatchStatus.APPLIED
+    started_at: datetime = field(default_factory=datetime.now)
 
 
 @dataclass

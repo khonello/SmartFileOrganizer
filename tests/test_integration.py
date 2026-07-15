@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from history.db import HistoryDB
-from models import OperationType
+from history.database import HistoryDB
+from models import BatchStatus, OperationType
 from organizer import Organizer
 
 # A "Downloads"-shaped folder: loose files at the root, a couple of nested
@@ -62,8 +62,10 @@ def test_end_to_end_apply_then_commit(tmp_path: Path):
     """The full happy path: plan, apply, review, commit the organized tree."""
     folder = _build_sample_folder(tmp_path)
 
+    # The whole lifecycle runs against a live db: commit/rollback record the
+    # run's status, so the history has to outlast them.
     with HistoryDB(":memory:") as db:
-        organizer = Organizer(history=db)
+        organizer = Organizer(history=db, preset="downloads_cleanup")
 
         # Preflight: never start a run that can't finish.
         assert organizer.check_space(folder).ok
@@ -82,58 +84,73 @@ def test_end_to_end_apply_then_commit(tmp_path: Path):
         assert len(operations) == len(SAMPLE_FILES)
         assert {op.operation_type for op in operations} == {OperationType.COPY}
 
-    # -- the before/ + after/ review state ---------------------------------
-    before, after = folder / "before", folder / "after"
+        # -- the before/ + after/ review state ------------------------------
+        before, after = folder / "before", folder / "after"
 
-    # Originals were moved out of the root and staged, keeping their layout.
-    assert (before / "notes.txt").read_text() == "root notes"
-    assert (before / "archive" / "old" / "notes.txt").read_text() == "archived notes"
-    assert (before / "work" / "report_v1.2.docx").read_text() == "quarterly report"
-    assert not (folder / "notes.txt").exists()
+        # The run is now pending: its state is on disk, awaiting a decision.
+        pending = organizer.pending_batch(folder)
+        assert pending is not None and pending.batch_id == batch_id
+        assert pending.status is BatchStatus.APPLIED
+        assert pending.preset == "downloads_cleanup"
+        assert organizer.is_scaffolded(folder)
 
-    # The organized copy: each layer of the classifier placed its file, and the
-    # bytes made the trip intact.
-    assert (after / "Images" / "photo.jpg").read_text() == "root photo bytes"
-    assert (
-        after / "Screenshots" / "2026" / "Screenshot_2026-03-11.png"
-    ).read_text() == "screenshot bytes"
-    assert (
-        after / "Documents" / "Invoices" / "2026" / "January" / "Invoice_2026-01-26.pdf"
-    ).read_text() == "january invoice"
-    assert (
-        after / "Documents" / "Invoices" / "2026" / "February" / "Invoice_2026-02-14.pdf"
-    ).read_text() == "february invoice"
-    assert (
-        after / "Projects" / "report" / "report_v1.2.docx"
-    ).read_text() == "quarterly report"
+        # Originals were moved out of the root and staged, keeping their layout.
+        assert (before / "notes.txt").read_text() == "root notes"
+        assert (before / "archive" / "old" / "notes.txt").read_text() == "archived notes"
+        assert (before / "work" / "report_v1.2.docx").read_text() == "quarterly report"
+        assert not (folder / "notes.txt").exists()
 
-    # The collision: both notes.txt survive, the loser taking a suffix. Scan
-    # order decides which is which, so assert on the pair, not on who won.
-    documents = after / "Documents"
-    assert (documents / "notes.txt").exists()
-    assert (documents / "notes (1).txt").exists()
-    assert {
-        (documents / "notes.txt").read_text(),
-        (documents / "notes (1).txt").read_text(),
-    } == {"root notes", "archived notes"}
+        # The organized copy: each layer of the classifier placed its file, and
+        # the bytes made the trip intact.
+        assert (after / "Images" / "photo.jpg").read_text() == "root photo bytes"
+        assert (
+            after / "Screenshots" / "2026" / "Screenshot_2026-03-11.png"
+        ).read_text() == "screenshot bytes"
+        assert (
+            after / "Documents" / "Invoices" / "2026" / "January"
+            / "Invoice_2026-01-26.pdf"
+        ).read_text() == "january invoice"
+        assert (
+            after / "Documents" / "Invoices" / "2026" / "February"
+            / "Invoice_2026-02-14.pdf"
+        ).read_text() == "february invoice"
+        assert (
+            after / "Projects" / "report" / "report_v1.2.docx"
+        ).read_text() == "quarterly report"
 
-    # Conservation across the review state: originals staged once, copied once.
-    assert len(_files_under(before)) == len(SAMPLE_FILES)
-    assert len(_files_under(after)) == len(SAMPLE_FILES)
+        # The collision: both notes.txt survive, the loser taking a suffix. Scan
+        # order decides which is which, so assert on the pair, not on who won.
+        documents = after / "Documents"
+        assert (documents / "notes.txt").exists()
+        assert (documents / "notes (1).txt").exists()
+        assert {
+            (documents / "notes.txt").read_text(),
+            (documents / "notes (1).txt").read_text(),
+        } == {"root notes", "archived notes"}
 
-    # -- commit ------------------------------------------------------------
-    organizer.commit(folder)
+        # Conservation across the review state: originals staged once, copied once.
+        assert len(_files_under(before)) == len(SAMPLE_FILES)
+        assert len(_files_under(after)) == len(SAMPLE_FILES)
 
-    assert not before.exists()
-    assert not after.exists()
-    assert (folder / "Images" / "photo.jpg").read_text() == "root photo bytes"
-    assert (
-        folder / "Documents" / "Invoices" / "2026" / "January" / "Invoice_2026-01-26.pdf"
-    ).read_text() == "january invoice"
+        # -- commit ---------------------------------------------------------
+        organizer.commit(folder)
 
-    # Count in == count out, and every byte accounted for.
-    assert len(_files_under(folder)) == len(SAMPLE_FILES)
-    assert _contents_under(folder) == sorted(SAMPLE_FILES.values())
+        assert not before.exists()
+        assert not after.exists()
+        assert (folder / "Images" / "photo.jpg").read_text() == "root photo bytes"
+        assert (
+            folder / "Documents" / "Invoices" / "2026" / "January"
+            / "Invoice_2026-01-26.pdf"
+        ).read_text() == "january invoice"
+
+        # Count in == count out, and every byte accounted for.
+        assert len(_files_under(folder)) == len(SAMPLE_FILES)
+        assert _contents_under(folder) == sorted(SAMPLE_FILES.values())
+
+        # The run is finished and no longer pending -- nothing left to resume.
+        assert db.get_batch(batch_id).status is BatchStatus.COMMITTED
+        assert organizer.pending_batch(folder) is None
+        assert not organizer.is_scaffolded(folder)
 
 
 # -- apply -> rollback -------------------------------------------------------

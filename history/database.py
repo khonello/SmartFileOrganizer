@@ -12,7 +12,8 @@ from collections.abc import Iterable
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from models import Operation, OperationType
+from models import Batch, BatchStatus, CollisionStrategy, Operation, OperationType
+from rules import rule_loader
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS operations (
@@ -25,6 +26,17 @@ CREATE TABLE IF NOT EXISTS operations (
     undone           INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_operations_batch ON operations(batch_id);
+
+CREATE TABLE IF NOT EXISTS batches (
+    batch_id           TEXT PRIMARY KEY,
+    folder             TEXT NOT NULL,
+    preset             TEXT,
+    collision_strategy TEXT NOT NULL,
+    rules_json         TEXT NOT NULL,
+    status             TEXT NOT NULL,
+    started_at         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_batches_status ON batches(status);
 """
 
 
@@ -83,12 +95,81 @@ class HistoryDB:
         return [_row_to_operation(r) for r in rows]
 
     def batches(self) -> list[str]:
-        """Return batch ids that still have at least one un-undone operation."""
+        """Batch ids that still have at least one un-undone *operation*.
+
+        Derived from the operations log, so it sees batches logged without a
+        :meth:`start_batch` record (crash recovery). For the run records that
+        drive the history UI, see :meth:`recent_batches`.
+        """
         rows = self.conn.execute(
             """SELECT batch_id FROM operations WHERE undone = 0
                GROUP BY batch_id ORDER BY MAX(id) DESC"""
         ).fetchall()
         return [r["batch_id"] for r in rows]
+
+    # -- run records ---------------------------------------------------------
+
+    def start_batch(self, batch: Batch) -> None:
+        """Record a run and the inputs that produced it, before it executes.
+
+        Written before any file is touched, for the same reason operations are
+        logged before their copy: a run interrupted mid-batch must still be
+        findable afterwards.
+        """
+        self.conn.execute(
+            """INSERT OR REPLACE INTO batches
+               (batch_id, folder, preset, collision_strategy, rules_json,
+                status, started_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                batch.batch_id,
+                str(batch.folder),
+                batch.preset,
+                batch.collision_strategy.value,
+                rule_loader.rules_to_json(batch.rules),
+                batch.status.value,
+                batch.started_at.isoformat(),
+            ),
+        )
+        self.conn.commit()
+
+    def set_batch_status(self, batch_id: str, status: BatchStatus) -> None:
+        """Move a run to its next lifecycle state (committed / rolled back)."""
+        self.conn.execute(
+            "UPDATE batches SET status = ? WHERE batch_id = ?",
+            (status.value, batch_id),
+        )
+        self.conn.commit()
+
+    def get_batch(self, batch_id: str) -> Batch | None:
+        """Return one run record, or ``None`` if it was never recorded."""
+        row = self.conn.execute(
+            "SELECT * FROM batches WHERE batch_id = ?", (batch_id,)
+        ).fetchone()
+        return _row_to_batch(row) if row is not None else None
+
+    def recent_batches(self, *, limit: int | None = None) -> list[Batch]:
+        """Run records, newest first — the history sidebar's source."""
+        query = "SELECT * FROM batches ORDER BY started_at DESC, rowid DESC"
+        params: tuple[object, ...] = ()
+        if limit is not None:
+            query += " LIMIT ?"
+            params = (limit,)
+        return [_row_to_batch(r) for r in self.conn.execute(query, params)]
+
+    def pending_batches(self, folder: Path | str | None = None) -> list[Batch]:
+        """Runs still awaiting a decision (``before/``/``after/`` on disk).
+
+        These are what a "you have an unfinished run" prompt is built from, and
+        what pruning must never delete.
+        """
+        query = "SELECT * FROM batches WHERE status = ?"
+        params: list[object] = [BatchStatus.APPLIED.value]
+        if folder is not None:
+            query += " AND folder = ?"
+            params.append(str(folder))
+        query += " ORDER BY started_at DESC, rowid DESC"
+        return [_row_to_batch(r) for r in self.conn.execute(query, params)]
 
     def mark_undone(self, operation_id: int) -> None:
         self.conn.execute(
@@ -106,12 +187,16 @@ class HistoryDB:
         """Drop operations older than ``retention_days``; return rows deleted.
 
         Enforces ``Settings.history_retention_days``. ``retention_days=0``
-        disables pruning entirely. ``protect_batches`` shields in-flight batch
-        ids — a batch that has been applied but not yet committed or rolled back
-        still needs its log, and deleting it would strand the user's files in
-        ``after/`` with no record of where they came from.
+        disables pruning entirely.
 
-        Two deliberate choices:
+        Runs still awaiting a decision are protected automatically: a batch
+        recorded as :attr:`~models.BatchStatus.APPLIED` has ``before/`` and
+        ``after/`` live on the user's disk, and deleting its log would strand
+        those files with no record of where they came from. ``protect_batches``
+        shields additional ids on top of that (e.g. a batch logged without a
+        run record, which the status check cannot see).
+
+        Three deliberate choices:
 
         * **Batches are pruned whole or not at all.** A batch is eligible only
           once *every* one of its operations is past the cutoff. Deleting half a
@@ -124,11 +209,15 @@ class HistoryDB:
           holds today, but one aware timestamp (``...+02:00``) would quietly
           sort wrong and delete live history. Parsing costs one row scan and
           removes the whole class of bug.
+        * **A run record dies with its operations.** Keeping the batches row
+          after its log is gone would leave the history sidebar advertising a
+          run it can no longer show.
         """
         if retention_days <= 0:
             return 0
         cutoff = (now or datetime.now()) - timedelta(days=retention_days)
-        protected = set(protect_batches)
+        protected = {b.batch_id for b in self.pending_batches()}
+        protected.update(protect_batches)
 
         newest: dict[str, datetime] = {}
         for row in self.conn.execute("SELECT batch_id, timestamp FROM operations"):
@@ -144,9 +233,12 @@ class HistoryDB:
         ]
         if not stale:
             return 0
+        placeholders = ",".join("?" * len(stale))
         cur = self.conn.execute(
-            f"DELETE FROM operations WHERE batch_id IN ({','.join('?' * len(stale))})",
-            stale,
+            f"DELETE FROM operations WHERE batch_id IN ({placeholders})", stale
+        )
+        self.conn.execute(
+            f"DELETE FROM batches WHERE batch_id IN ({placeholders})", stale
         )
         self.conn.commit()
         return cur.rowcount
@@ -171,4 +263,18 @@ def _row_to_operation(row: sqlite3.Row) -> Operation:
         operation_type=OperationType(row["operation_type"]),
         timestamp=datetime.fromisoformat(row["timestamp"]),
         undone=bool(row["undone"]),
+    )
+
+
+def _row_to_batch(row: sqlite3.Row) -> Batch:
+    return Batch(
+        batch_id=row["batch_id"],
+        folder=Path(row["folder"]),
+        collision_strategy=CollisionStrategy(row["collision_strategy"]),
+        rules=rule_loader.rules_from_json(
+            row["rules_json"], source=f"batch {row['batch_id']}"
+        ),
+        preset=row["preset"],
+        status=BatchStatus(row["status"]),
+        started_at=datetime.fromisoformat(row["started_at"]),
     )

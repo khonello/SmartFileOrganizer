@@ -138,7 +138,7 @@ SmartFileOragnizer/            # repo root = the project
 ├── core/
 │   ├── scanner.py             # Recursive directory scanning
 │   ├── classifier.py          # Rule engine — applies classification layers
-│   ├── metadata.py            # EXIF / PDF / audio-video metadata extraction (stub)
+│   ├── metadata.py            # EXIF / PDF / audio metadata extraction (lazy)
 │   ├── pattern_matcher.py     # Regex/fnmatch-based filename parsing + extension map
 │   └── file_ops.py            # Copy/move, collision handling, disk-space preflight
 ├── rules/
@@ -148,7 +148,7 @@ SmartFileOragnizer/            # repo root = the project
 │   │   └── work_files.json
 │   └── rule_loader.py         # Loads/validates preset + user-defined rules
 ├── history/
-│   ├── db.py                  # SQLite operation log
+│   ├── database.py            # SQLite operation log + run records
 │   └── undo_manager.py        # Record-based rollback (crash recovery)
 ├── gui/                       # PySide6 UI (stub)
 │   ├── main_window.py
@@ -218,6 +218,34 @@ non-destructive before/after staging model:
 | `operation_type` | TEXT | `copy` (Apply, default) / `move` (used when discarding) / `rename` |
 | `timestamp` | DATETIME | When the operation was executed |
 | `undone` | BOOLEAN | Whether this operation has been rolled back |
+
+### Run Records (SQLite)
+
+One row per organization run — *what produced it*, not just what it did.
+
+| Column | Type | Description |
+|---|---|---|
+| `batch_id` | TEXT PK | Ties the run to its operations |
+| `folder` | TEXT | The organized folder |
+| `preset` | TEXT | Preset the run used, if any |
+| `collision_strategy` | TEXT | Strategy in force for this run |
+| `rules_json` | TEXT | **Snapshot** of the rules that produced the run |
+| `status` | TEXT | `applied` / `committed` / `rolled_back` |
+| `started_at` | DATETIME | When the run began |
+
+Two properties this exists for:
+
+**The rules are frozen, not referenced.** A run's rule trace ("this file matched
+`invoice_detection`") only means something against the rules in force when it
+ran. Presets get edited; a live reference would silently rewrite history.
+
+**`status` is what makes undo honest.** `applied` means `before/` and `after/`
+are real folders on disk awaiting a decision — a state that outlives the app,
+so a run can be *resumed* in a later session (`Organizer.pending_batch`). Once
+`committed`, undo is **impossible**: the originals are gone and the logged
+`after/` paths no longer exist, so `UndoManager` raises `CannotUndoError`
+rather than reporting a success it didn't perform. Pruning protects `applied`
+runs automatically, and a run record is deleted with its operations.
 
 ### Rule Definition (JSON)
 

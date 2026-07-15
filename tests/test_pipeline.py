@@ -13,7 +13,7 @@ from pathlib import Path
 from core import file_ops, pattern_matcher
 from core.classifier import Classifier
 from core.file_ops import resolve_collision
-from history.db import HistoryDB
+from history.database import HistoryDB
 from models import CollisionStrategy, FileEntry, MatchType, Rule
 from organizer import Organizer
 

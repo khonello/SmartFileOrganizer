@@ -140,7 +140,45 @@ def load_effective_rules(
     return merge_rules(load_user_rules(user_dir), preset_rules)
 
 
-def _parse_rule(item: dict, *, source: Path) -> Rule:
+# -- snapshotting ------------------------------------------------------------
+
+
+def rule_to_dict(rule: Rule) -> dict:
+    """Serialize a :class:`Rule` back to its JSON schema form.
+
+    The inverse of :func:`_parse_rule`. ``metadata_key`` is omitted when unset
+    so a filename rule doesn't round-trip with a meaningless null.
+    """
+    item = {
+        "rule": rule.rule,
+        "pattern": rule.pattern,
+        "destination": rule.destination,
+        "match_type": rule.match_type.value,
+        "case_sensitive": rule.case_sensitive,
+        "priority": rule.priority,
+    }
+    if rule.metadata_key is not None:
+        item["metadata_key"] = rule.metadata_key
+    return item
+
+
+def rules_to_json(rules: list[Rule]) -> str:
+    """Freeze a rule set as JSON, for snapshotting onto a history batch."""
+    return json.dumps([rule_to_dict(r) for r in rules])
+
+
+def rules_from_json(text: str, *, source: str = "<snapshot>") -> list[Rule]:
+    """Thaw a rule set frozen by :func:`rules_to_json`."""
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise RuleValidationError(f"{source}: invalid JSON — {exc}") from exc
+    if not isinstance(data, list):
+        raise RuleValidationError(f"{source}: expected a list of rules")
+    return [_parse_rule(item, source=source) for item in data]
+
+
+def _parse_rule(item: dict, *, source: Path | str) -> Rule:
     required = ("rule", "pattern", "destination")
     missing = [k for k in required if k not in item]
     if missing:

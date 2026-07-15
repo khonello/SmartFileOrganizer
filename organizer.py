@@ -25,8 +25,14 @@ from core import file_ops
 from core.classifier import Classifier
 from core.file_ops import SpaceCheck
 from core.scanner import scan
-from history.db import HistoryDB
-from models import ClassificationResult, CollisionStrategy, Rule
+from history.database import HistoryDB
+from models import (
+    Batch,
+    BatchStatus,
+    ClassificationResult,
+    CollisionStrategy,
+    Rule,
+)
 
 ProgressCallback = Callable[[int, int], None]
 
@@ -43,10 +49,15 @@ class Organizer:
         *,
         collision_strategy: CollisionStrategy = CollisionStrategy.APPEND_SUFFIX,
         history: HistoryDB | None = None,
+        preset: str | None = None,
     ) -> None:
         self.classifier = Classifier(rules)
+        self.rules = list(rules or [])
         self.collision_strategy = collision_strategy
         self.history = history
+        # Recorded onto each batch, so a run's history entry can say which
+        # preset it came from rather than just showing the flattened rules.
+        self.preset = preset
 
     def check_space(self, folder: Path | str) -> SpaceCheck:
         """Pre-flight disk-space check. Call before :meth:`apply`; bail if
@@ -80,11 +91,27 @@ class Organizer:
         For each planned file: move the original into ``before/`` (preserving
         its relative path), then copy the staged file into its organized
         ``after/`` destination, logging the copy first. Returns the batch id.
+
+        The run itself is recorded before any file moves, with a snapshot of
+        the rules that produced it — a run's trace is only meaningful against
+        the rules in force at the time, and presets change.
         """
         folder = Path(folder)
         before = folder / BEFORE_DIR
         batch_id = uuid.uuid4().hex
         total = len(plan)
+
+        if self.history is not None and not dry_run:
+            self.history.start_batch(
+                Batch(
+                    batch_id=batch_id,
+                    folder=folder,
+                    collision_strategy=self.collision_strategy,
+                    rules=self.rules,
+                    preset=self.preset,
+                    status=BatchStatus.APPLIED,
+                )
+            )
         for index, result in enumerate(plan, start=1):
             rel = result.entry.path.relative_to(folder)
             staged = before / rel
@@ -101,18 +128,36 @@ class Organizer:
                 progress(index, total)
         return batch_id
 
-    def commit(self, folder: Path | str, *, dry_run: bool = False) -> None:
+    def commit(
+        self,
+        folder: Path | str,
+        *,
+        batch_id: str | None = None,
+        dry_run: bool = False,
+    ) -> None:
         """Discard ``before/`` and offload ``after/`` into the folder root.
 
         The point of no return: the originals are deleted and the folder is
-        left holding just the organized structure.
+        left holding just the organized structure. Recording the batch as
+        committed is what lets undo *refuse* afterwards instead of silently
+        doing nothing — the logged ``after/`` paths cease to exist here.
+
+        ``batch_id`` defaults to the folder's pending run, so a resumed session
+        that no longer holds the id in memory can still finish the run.
         """
         folder = Path(folder)
         file_ops.remove_tree(folder / BEFORE_DIR, dry_run=dry_run)
         file_ops.promote_children(folder / AFTER_DIR, folder, dry_run=dry_run)
         file_ops.remove_tree(folder / AFTER_DIR, dry_run=dry_run)
+        self._finish(folder, batch_id, BatchStatus.COMMITTED, dry_run=dry_run)
 
-    def rollback(self, folder: Path | str, *, dry_run: bool = False) -> None:
+    def rollback(
+        self,
+        folder: Path | str,
+        *,
+        batch_id: str | None = None,
+        dry_run: bool = False,
+    ) -> None:
         """Discard ``after/`` and restore ``before/``'s contents to the root.
 
         Returns the folder to its pre-apply state.
@@ -121,6 +166,51 @@ class Organizer:
         file_ops.remove_tree(folder / AFTER_DIR, dry_run=dry_run)
         file_ops.promote_children(folder / BEFORE_DIR, folder, dry_run=dry_run)
         file_ops.remove_tree(folder / BEFORE_DIR, dry_run=dry_run)
+        self._finish(folder, batch_id, BatchStatus.ROLLED_BACK, dry_run=dry_run)
+
+    # -- resuming ------------------------------------------------------------
+
+    def pending_batch(self, folder: Path | str) -> Batch | None:
+        """The run awaiting a decision on ``folder``, if the history knows one.
+
+        A run's state lives on disk and outlives the app, so a folder can hold
+        a half-finished run from a previous session.
+        """
+        if self.history is None:
+            return None
+        pending = self.history.pending_batches(Path(folder))
+        return pending[0] if pending else None
+
+    @staticmethod
+    def is_scaffolded(folder: Path | str) -> bool:
+        """True if ``folder`` already holds ``before/``/``after/`` scaffolding.
+
+        The disk-level counterpart to :meth:`pending_batch`: it spots an
+        unfinished run even with no history db. Worth checking before planning
+        — a scaffolded folder yields an empty plan (everything in it is
+        skipped as scaffolding), which reads as "nothing to organize" while the
+        user's files sit staged in ``before/``.
+        """
+        folder = Path(folder)
+        return (folder / BEFORE_DIR).exists() or (folder / AFTER_DIR).exists()
+
+    def _finish(
+        self,
+        folder: Path,
+        batch_id: str | None,
+        status: BatchStatus,
+        *,
+        dry_run: bool,
+    ) -> None:
+        """Move the run record to its terminal state."""
+        if self.history is None or dry_run:
+            return
+        if batch_id is None:
+            batch = self.pending_batch(folder)
+            if batch is None:
+                return  # no run record (e.g. history added mid-flight)
+            batch_id = batch.batch_id
+        self.history.set_batch_status(batch_id, status)
 
     def iter_plan(self, folder: Path | str) -> Iterator[ClassificationResult]:
         """Streaming variant of :meth:`build_plan` for staggered UI reveal."""

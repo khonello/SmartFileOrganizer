@@ -24,29 +24,61 @@ decisions). No UI/visual design exists yet — it will be created from scratch.
       disk-space preflight, promote/remove primitives
 - [x] `organizer.py` — before/after lifecycle: `check_space` → `build_plan` →
       `apply` (stage `before/`, copy `after/`) → `commit` / `rollback`
-- [x] `history/db.py` — SQLite operation log (log-before-copy, `batch_id` grouping)
+- [x] `history/database.py` — SQLite operation log (log-before-copy, `batch_id` grouping)
 - [x] `history/undo_manager.py` — record-based rollback
 - [x] `rules/rule_loader.py` + 3 presets (downloads / photos / work)
 - [x] Headless pipeline tests (no Qt) — 14 passing
 
-## Phase 2 — GUI design & preview  ⭐ current
+## Phase 2 — GUI  ⭐ current
 > Swapped ahead of metadata so the UI can be seen and validated early.
-> First design attempt was discarded; design direction restarts from scratch.
+> First design attempt was discarded; visual direction restarts from scratch.
 
-### 2A — Design direction (do this before building anything)
-- [ ] Get an anchor from the user (reference app / screenshot / palette / mood)
+### 2A — Structure  ✅ agreed
+One navigation system (the sidebar), because splitting nav across sidebar and
+bottom bar leaves the sidebar irrelevant on half the pages. The chain is:
+**sidebar selects → body follows → buttons follow the body.**
+
+- [x] Sidebar: `Organize` / `History` (expandable per run) / `Rules` / `Settings`
+- [x] Body: two panes, read as a **diff**, not two file browsers — selecting a
+      file on one side highlights its counterpart on the other. Pane meanings
+      shift by state (Preview: now vs proposed; Review: real `before/` vs
+      `after/`; Committed: collapse to one)
+- [x] Top bar: inputs + view controls (folder, preset, search) — not decisions
+- [x] Bottom bar: clickable status left (VS Code style), action set right
+- [x] Rule-layer badge on **every** row (`[C]`/`[P]`/`[M]`/`[E]`) — makes the
+      deterministic promise legible, and shows at a glance when rules aren't
+      firing (all `[E]`)
+- [x] Per-run rule snapshot, so history is reproducible — **landed**
+- [x] Dropped the dry-run toggle: Preview *is* the dry run; a toggle would read
+      as "apply, but don't apply"
+- [ ] **Naming**: never ship "Discard" — ambiguous between commit (irreversible)
+      and rollback (safe). Review's two choices are a *fork* and must sit side
+      by side: "Keep Organized" (confirm required) / "Restore Original"
+
+### 2B — Design direction (blocked)
+- [ ] **Get an anchor from the user** (reference app / screenshot / palette / mood)
 - [ ] Agree a design language, then write it up as a fresh design spec
 - [ ] Build a self-contained HTML prototype to validate look/feel before Qt
 - [ ] **Review with user, iterate until approved**
 
-### 2B — PySide6 implementation (port the approved design)
+### 2C — PySide6 implementation (port the approved design)
 - [ ] `gui/main_window.py` — `QMainWindow` shell (layout per approved design)
 - [ ] QSS design tokens + fonts; window chrome
-- [ ] `gui/preview_tree.py` — before/after file view; pending / conflict / selection states
+- [ ] `gui/preview_tree.py` — the diff panes; linked selection; layer badges;
+      pending / conflict / collision states
 - [ ] `gui/settings_panel.py` — details / rule trace for the selected file
-- [ ] Action controls — dry-run toggle, progress, Undo/Apply → Rollback/Commit
+- [ ] Sidebar with history from `db.recent_batches()`; pending runs badged
 - [ ] Wire to `Organizer`: space check → preview → Apply → Commit / Rollback
-- [ ] Empty / dry-run / insufficient-space / error states
+- [ ] **Resume**: on folder select, check `is_scaffolded` / `pending_batch` and
+      offer to finish the run — otherwise the plan is empty and reads as
+      "nothing to organize" while the files sit in `before/`
+- [ ] States: empty / scanning / no-space (a real state, not a dialog) /
+      applying / review / committed / error
+- [ ] **Threading**: `Organizer.apply` is a synchronous loop — it must run on a
+      `QThread` with `progress` marshalled back, or the window freezes on a
+      large folder. Not a polish item; it shapes `main_window` from day one
+- [ ] **Cancel**: `apply` can't be interrupted mid-batch; needs a cooperative
+      cancellation hook (changes the signature — decide before building)
 - [ ] Respect OS reduced-motion; visible keyboard-focus outline on every control
 
 ## Phase 3 — Metadata & smart rules  ✅ done

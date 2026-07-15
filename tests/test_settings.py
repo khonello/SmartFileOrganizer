@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 import settings as settings_module
-from history.db import HistoryDB
+from history.database import HistoryDB
 from models import CollisionStrategy, Operation, OperationType, Rule
 from rules import rule_loader
 from rules.rule_loader import RuleFileSkipped, RuleValidationError
