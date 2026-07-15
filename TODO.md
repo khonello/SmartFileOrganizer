@@ -49,24 +49,32 @@ source of truth — read it before building any of 2C.
 - [ ] Build a self-contained HTML prototype to validate look/feel before Qt
 - [ ] **Review with user, iterate until approved**
 
-### 2C — PySide6 implementation (port the approved design)
-- [ ] `gui/main_window.py` — `QMainWindow` shell (layout per approved design)
-- [ ] QSS design tokens + fonts; window chrome
-- [ ] `gui/preview_tree.py` — the diff panes; linked selection; layer badges;
-      pending / conflict / collision states
-- [ ] `gui/settings_panel.py` — details / rule trace for the selected file
-- [ ] Sidebar with history from `db.recent_batches()`; pending runs badged
-- [ ] Wire to `Organizer`: space check → preview → Apply → Commit / Rollback
-- [ ] **Resume**: on folder select, check `is_scaffolded` / `pending_batch` and
-      offer to finish the run — otherwise the plan is empty and reads as
-      "nothing to organize" while the files sit in `before/`
-- [ ] States: empty / scanning / no-space (a real state, not a dialog) /
-      applying / review / committed / error
-- [ ] **Threading**: `Organizer.apply` is a synchronous loop — it must run on a
-      `QThread` with `progress` marshalled back, or the window freezes on a
-      large folder. Not a polish item; it shapes `main_window` from day one
+### 2C — Greybox shell  ✅ built (unstyled, run it: `python main.py`)
+Structure proved in the real medium before any styling. Drives the real
+`Organizer` end to end.
+
+- [x] `gui/main_window.py` — shell, the `AppState` machine, one `_sync()` that
+      decides every button's legality
+- [x] `gui/preview_tree.py` — the diff panes; linked selection; layer badges
+- [x] `gui/settings_panel.py` — inspector: rule trace for the selected file
+- [x] `gui/worker.py` — scan/apply off the UI thread, progress marshalled back
+- [x] Sidebar with history from `db.recent_batches()`; pending runs badged
+- [x] Wire to `Organizer`: space check → preview → Apply → Commit / Rollback
+- [x] **Resume** on folder select via `is_scaffolded` / `pending_batch`
+- [x] States: empty / scanning / no-space / applying / review / committed / error
+- [x] Threading — and it immediately found two real bugs (see `UI_STRUCTURE.md`):
+      `HistoryDB` needed a lock, and a stale `QThread` handle crashed the app on
+      close after any run
 - [ ] **Cancel**: `apply` can't be interrupted mid-batch; needs a cooperative
-      cancellation hook (changes the signature — decide before building)
+      cancellation hook (changes the signature — decide before styling)
+- [ ] Review panes should read from `before/`/`after/` on disk; today they render
+      the in-memory plan, so a *resumed* run shows a placeholder
+- [ ] Rules and Settings pages are placeholders
+- [ ] Stale pending runs (folder deleted) stay in the sidebar forever
+
+### 2D — Styling (after the anchor)
+- [ ] QSS design tokens + fonts; window chrome
+- [ ] Conflict/collision row states in the diff
 - [ ] Respect OS reduced-motion; visible keyboard-focus outline on every control
 
 ## Phase 3 — Metadata & smart rules  ✅ done

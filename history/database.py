@@ -7,8 +7,10 @@ so a whole run can be rolled back together.
 
 from __future__ import annotations
 
+import functools
 import sqlite3
-from collections.abc import Iterable
+import threading
+from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -40,10 +42,30 @@ CREATE INDEX IF NOT EXISTS idx_batches_status ON batches(status);
 """
 
 
+def _locked(method: Callable) -> Callable:
+    """Serialize one call against the connection lock. See :class:`HistoryDB`."""
+
+    @functools.wraps(method)
+    def wrapper(self: HistoryDB, *args: object, **kwargs: object) -> object:
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class HistoryDB:
-    """Thin wrapper over the SQLite operations table.
+    """Thin wrapper over the SQLite operations + batches tables.
 
     Usable as a context manager. Pass ``":memory:"`` for tests.
+
+    **Thread-safe by lock, deliberately.** The GUI opens this on the UI thread
+    but runs the pipeline on a worker (``Organizer.apply`` is a blocking loop),
+    so the worker writes while the UI thread may read — a user browsing history
+    mid-run is a supported flow, not an edge case. sqlite3 pins a connection to
+    its creating thread unless told otherwise, so the connection opts out of
+    that check and every public method takes ``_lock`` instead. The lock is
+    reentrant because some methods call others (:meth:`prune` →
+    :meth:`pending_batches`).
     """
 
     def __init__(self, path: Path | str) -> None:
@@ -53,7 +75,8 @@ class HistoryDB:
         text = str(path)
         if text != ":memory:" and not text.startswith("file:"):
             Path(text).parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(text)
+        self._lock = threading.RLock()
+        self.conn = sqlite3.connect(text, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(_SCHEMA)
 
@@ -63,6 +86,7 @@ class HistoryDB:
     def __exit__(self, *exc: object) -> None:
         self.close()
 
+    @_locked
     def log(self, operation: Operation) -> int:
         """Insert an operation and return its assigned row id."""
         cur = self.conn.execute(
@@ -83,6 +107,7 @@ class HistoryDB:
         operation.id = int(cur.lastrowid)
         return operation.id
 
+    @_locked
     def operations_for_batch(
         self, batch_id: str, *, include_undone: bool = False
     ) -> list[Operation]:
@@ -94,6 +119,7 @@ class HistoryDB:
         rows = self.conn.execute(query, (batch_id,)).fetchall()
         return [_row_to_operation(r) for r in rows]
 
+    @_locked
     def batches(self) -> list[str]:
         """Batch ids that still have at least one un-undone *operation*.
 
@@ -109,6 +135,7 @@ class HistoryDB:
 
     # -- run records ---------------------------------------------------------
 
+    @_locked
     def start_batch(self, batch: Batch) -> None:
         """Record a run and the inputs that produced it, before it executes.
 
@@ -133,6 +160,7 @@ class HistoryDB:
         )
         self.conn.commit()
 
+    @_locked
     def set_batch_status(self, batch_id: str, status: BatchStatus) -> None:
         """Move a run to its next lifecycle state (committed / rolled back)."""
         self.conn.execute(
@@ -141,6 +169,7 @@ class HistoryDB:
         )
         self.conn.commit()
 
+    @_locked
     def get_batch(self, batch_id: str) -> Batch | None:
         """Return one run record, or ``None`` if it was never recorded."""
         row = self.conn.execute(
@@ -148,6 +177,7 @@ class HistoryDB:
         ).fetchone()
         return _row_to_batch(row) if row is not None else None
 
+    @_locked
     def recent_batches(self, *, limit: int | None = None) -> list[Batch]:
         """Run records, newest first — the history sidebar's source."""
         query = "SELECT * FROM batches ORDER BY started_at DESC, rowid DESC"
@@ -157,6 +187,7 @@ class HistoryDB:
             params = (limit,)
         return [_row_to_batch(r) for r in self.conn.execute(query, params)]
 
+    @_locked
     def pending_batches(self, folder: Path | str | None = None) -> list[Batch]:
         """Runs still awaiting a decision (``before/``/``after/`` on disk).
 
@@ -171,12 +202,14 @@ class HistoryDB:
         query += " ORDER BY started_at DESC, rowid DESC"
         return [_row_to_batch(r) for r in self.conn.execute(query, params)]
 
+    @_locked
     def mark_undone(self, operation_id: int) -> None:
         self.conn.execute(
             "UPDATE operations SET undone = 1 WHERE id = ?", (operation_id,)
         )
         self.conn.commit()
 
+    @_locked
     def prune(
         self,
         retention_days: int,
@@ -243,6 +276,7 @@ class HistoryDB:
         self.conn.commit()
         return cur.rowcount
 
+    @_locked
     def close(self) -> None:
         self.conn.close()
 

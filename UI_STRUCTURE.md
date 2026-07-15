@@ -224,17 +224,32 @@ engine cannot do.
 
 ---
 
-## Structural gaps to close before/while building
+## Structural gaps
 
-**Threading.** `Organizer.apply` is a synchronous loop. Called on the UI thread
-with a large folder it freezes the window solid. It must run on a `QThread` with
-the existing `progress` callback marshalled back. This shapes `main_window.py`
-from day one — it is not a polish item.
+**Threading — done.** `Organizer.apply` and `build_plan` are synchronous loops;
+on the UI thread they freeze the window. Both now run on a `QThread` via
+`gui/worker.py`, with `progress` marshalled back by Qt's queued connections.
 
-**Cancellation.** `apply` cannot be interrupted mid-batch; there is no
-cooperative cancellation hook. `Applying` lists Cancel as a legal action, and
-today the engine cannot honor it. Decide before building — it changes the
-signature.
+Two things this surfaced that no headless test could, both fixed:
+
+* **`HistoryDB` had to become thread-safe.** sqlite pins a connection to its
+  creating thread, and the worker writes to a db opened on the UI thread.
+  Browsing history mid-run is a *supported* flow, so the connection is genuinely
+  shared: it now opts out of the thread check and serializes on an `RLock`.
+* **Holding a `QThread` reference past `deleteLater` crashes the app.** The
+  wrapper points at freed C++ memory, so `closeEvent` asking `isRunning()` was
+  an access violation — a hard crash on closing the app after any run, not a
+  Python error. The handle is dropped when the worker finishes.
+
+**Cancellation — still open.** `apply` cannot be interrupted mid-batch; there is
+no cooperative cancellation hook. `Applying` lists Cancel as a legal action and
+the engine cannot honor it, so `closeEvent` can only *wait* for a run to finish.
+Decide before the GUI hardens — it changes the signature.
+
+**Stale pending runs.** A run whose folder was deleted stays `applied` forever
+and shows in the sidebar badged as unfinished business that can never be
+finished. Needs either a liveness check when listing (does the folder still hold
+`before/`?) or a way to dismiss a run.
 
 ---
 
