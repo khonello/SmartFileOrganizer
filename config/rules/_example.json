@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "Example user rule set. This file is INERT: names starting with '_' or '.'",
+    "are skipped by the loader. Copy it to something like 'my_rules.json' in",
+    "this same folder to switch it on.",
+    "",
+    "Every *.json here is loaded and merged ABOVE the active preset. Giving a",
+    "rule the same 'rule' id as a preset rule replaces that preset rule, which",
+    "is how you retune a built-in instead of competing with it.",
+    "",
+    "Fields:",
+    "  rule            unique id; also what the preview shows as the reason",
+    "  pattern         glob, e.g. *invoice* or *.exe",
+    "  match_type      filename | extension | metadata   (default: filename)",
+    "  destination     path template under the organized root; placeholders:",
+    "                  {year} {month} {month_num} {project} {category}",
+    "  case_sensitive  default: false",
+    "  priority        higher wins within the user layer (default: 0)",
+    "",
+    "A file with a syntax error is skipped with a warning, not fatal — but it",
+    "means none of its rules apply, so check the preview after editing."
+  ],
+  "rules": [
+    {
+      "rule": "tax_paperwork",
+      "pattern": "*tax*",
+      "match_type": "filename",
+      "destination": "Documents/Tax/{year}",
+      "case_sensitive": false,
+      "priority": 10
+    },
+    {
+      "rule": "raw_photos",
+      "pattern": "cr2",
+      "match_type": "extension",
+      "destination": "Photos/RAW/{year}/{month}",
+      "case_sensitive": false,
+      "priority": 5
+    }
+  ]
+}

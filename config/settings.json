@@ -2,5 +2,6 @@
   "default_preset": "downloads_cleanup",
   "collision_strategy": "append_suffix",
   "dry_run_default": true,
-  "history_retention_days": 30
+  "history_retention_days": 30,
+  "history_db_path": "%LOCALAPPDATA%\\SmartFileOrganizer\\history.sqlite3"
 }

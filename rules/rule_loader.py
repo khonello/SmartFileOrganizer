@@ -3,20 +3,30 @@
 Presets ship in ``rules/presets/*.json``; user rules live in
 ``config/rules/*.json``. Both use the same schema (README "Rule Definition"),
 so both go through :func:`load_rules`.
+
+User rules outrank presets — see :func:`merge_rules` for how that precedence is
+expressed and what happens when the two collide on a ``rule`` identifier.
 """
 
 from __future__ import annotations
 
 import json
+import warnings
+from dataclasses import replace
 from pathlib import Path
 
 from models import MatchType, Rule
 
 PRESETS_DIR = Path(__file__).parent / "presets"
+USER_RULES_DIR = Path(__file__).resolve().parent.parent / "config" / "rules"
 
 
 class RuleValidationError(ValueError):
     """Raised when a rule file is missing required fields or malformed."""
+
+
+class RuleFileSkipped(UserWarning):
+    """Warned when one user rule file is unusable and gets skipped."""
 
 
 def load_rules(path: Path | str) -> list[Rule]:
@@ -47,6 +57,87 @@ def load_preset(name: str) -> list[Rule]:
 def available_presets() -> list[str]:
     """Return the names of all built-in presets."""
     return sorted(p.stem for p in PRESETS_DIR.glob("*.json"))
+
+
+# -- user rules --------------------------------------------------------------
+
+
+def user_rule_files(directory: Path | str | None = None) -> list[Path]:
+    """Return the user rule files in ``directory``, in load order.
+
+    Files whose name starts with ``_`` or ``.`` are ignored, which is how the
+    shipped ``_example.json`` stays inert and how a user parks a rule set
+    without deleting it.
+    """
+    directory = Path(directory) if directory is not None else USER_RULES_DIR
+    if not directory.is_dir():
+        return []
+    return sorted(
+        p
+        for p in directory.glob("*.json")
+        if not p.name.startswith(("_", "."))
+    )
+
+
+def load_user_rules(
+    directory: Path | str | None = None, *, strict: bool = False
+) -> list[Rule]:
+    """Load every rule file in the user rules directory.
+
+    A missing directory yields no rules. One malformed file does not sink the
+    rest: it is skipped with a :class:`RuleFileSkipped` warning naming the file,
+    so a stray typo can't lock the user out of their own rule set. Pass
+    ``strict=True`` (e.g. when validating a file the user just edited) to raise
+    :class:`RuleValidationError` instead.
+    """
+    rules: list[Rule] = []
+    for path in user_rule_files(directory):
+        try:
+            rules.extend(load_rules(path))
+        except (RuleValidationError, OSError) as exc:
+            if strict:
+                raise
+            warnings.warn(
+                f"skipping user rule file {path}: {exc}",
+                RuleFileSkipped,
+                stacklevel=2,
+            )
+    return rules
+
+
+def merge_rules(user_rules: list[Rule], preset_rules: list[Rule]) -> list[Rule]:
+    """Combine user rules with preset rules, user rules winning.
+
+    Two things need saying, because :class:`~core.classifier.Classifier` takes
+    one flat list and orders it by ``priority`` alone — it has no idea where a
+    rule came from, so list order buys nothing:
+
+    * **Identifier collisions.** A user rule sharing a preset rule's ``rule``
+      id *replaces* it. Re-declaring ``invoice_detection`` is how a user retunes
+      a preset rule rather than fighting it with a second, near-duplicate rule.
+    * **Precedence.** The surviving user rules are lifted above the highest
+      preset priority (relative order among themselves preserved), so a user
+      rule cannot be silently outranked by a preset that shipped with a high
+      ``priority``. Priorities are rewritten on copies; the caller's Rule
+      objects are untouched.
+    """
+    overridden = {r.rule for r in user_rules}
+    kept = [r for r in preset_rules if r.rule not in overridden]
+    if not user_rules or not kept:
+        return [*user_rules, *kept]
+
+    # Shift so the lowest-priority user rule sits one above the top preset.
+    shift = max(r.priority for r in kept) + 1 - min(r.priority for r in user_rules)
+    lifted = [replace(r, priority=r.priority + shift) for r in user_rules]
+    return [*lifted, *kept]
+
+
+def load_effective_rules(
+    preset: str | None = None, *, user_dir: Path | str | None = None
+) -> list[Rule]:
+    """The rule set to hand :class:`~core.classifier.Classifier`: user + preset."""
+    preset_rules = load_preset(preset) if preset else []
+    return merge_rules(load_user_rules(user_dir), preset_rules)
 
 
 def _parse_rule(item: dict, *, source: Path) -> Rule:
