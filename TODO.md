@@ -13,7 +13,7 @@ decisions). No UI/visual design exists yet — it will be created from scratch.
 - [x] `pyproject.toml`, `requirements.txt` / `requirements-dev.txt`, `.gitignore`
 - [x] Virtual environment (`environ/`)
 - [x] Docs: `README.md`, `CLAUDE.md`
-- [ ] Initial git commit of the scaffold
+- [x] Initial git commit of the scaffold
 
 ## Phase 1 — Core engine
 - [x] `core/scanner.py` — recursive scan → `FileEntry` (size, mtime, extension)
@@ -49,37 +49,64 @@ decisions). No UI/visual design exists yet — it will be created from scratch.
 - [ ] Empty / dry-run / insufficient-space / error states
 - [ ] Respect OS reduced-motion; visible keyboard-focus outline on every control
 
-## Phase 3 — Metadata & smart rules
-- [ ] `core/metadata.py` — implement `extract_exif` (Pillow: `date_taken`)
-- [ ] `core/metadata.py` — implement `extract_pdf` (PyPDF2: author, creation date)
-- [ ] `core/metadata.py` — implement `extract_audio_tags` (mutagen: artist/album/year)
-- [ ] Wire metadata layer into `classifier` — **preset-driven**: only read metadata
+## Phase 3 — Metadata & smart rules  ✅ done
+- [x] `core/metadata.py` — implement `extract_exif` (Pillow: `date_taken`)
+- [x] `core/metadata.py` — implement `extract_pdf` (PyPDF2: author, creation date)
+- [x] `core/metadata.py` — implement `extract_audio_tags` (mutagen: artist/album/
+      `release_year` — named to avoid colliding with the `{year}` placeholder)
+- [x] `Rule.metadata_key` — which field a `match_type: metadata` rule tests against
+- [x] Wire metadata layer into `classifier` — **preset-driven**: only read metadata
       when a rule's `match_type` is `metadata` or a destination template needs a
       metadata field (lazy `FileEntry.metadata` population)
-- [ ] Metadata destination placeholders (e.g. `{exif_year}`, `{author}`) in templating
-- [ ] Tests: metadata extraction (with sample fixture files) + preset-driven trigger
+- [x] Metadata destination placeholders (`{author}`, `{artist}`, `{date_taken}`, …)
+- [x] Tests: metadata extraction (fixtures generated at runtime) + preset-driven
+      trigger + a laziness assertion (no rule needs metadata ⇒ no file opened)
+- [ ] **Decide:** `Classifier(use_metadata_layer=True)` is opt-in and nothing sets
+      it, so the built-in metadata layer is currently unreachable. Wire it to a
+      setting (it costs a file read per entry, so it can't just default on).
 
-## Phase 4 — Config, settings & safety
-- [ ] Load `config/settings.json` (default_preset, collision_strategy,
-      dry_run_default, history_retention_days) into a settings object
-- [ ] User custom-rule loading from `config/rules/*.json`
-- [ ] Enforce `history_retention_days` (prune old operations)
-- [ ] Collision strategy selection (overwrite / skip) surfaced through the config
-- [ ] Progress callback plumbing verified end-to-end for large batches
-- [ ] Tests: settings load + custom-rule precedence over presets
+## Phase 4 — Config, settings & safety  ✅ done
+- [x] Load `config/settings.json` into a `Settings` object (`settings.py`), incl.
+      a new `history_db_path` (defaults under `%LOCALAPPDATA%`)
+- [x] User custom-rule loading from `config/rules/*.json` (`load_effective_rules`)
+- [x] Enforce `history_retention_days` (prune old operations, batch-atomic)
+- [x] Collision strategy selection (overwrite / skip) surfaced through the config
+- [x] Tests: settings load + defaults/malformed + custom-rule precedence + pruning
+- [ ] Progress callback plumbing verified end-to-end for large batches (needs a
+      real caller — deferred to the GUI)
+- [ ] **Review:** `merge_rules` rewrites user-rule priorities to lift them above
+      presets, because `Classifier` sorts one flat list by `priority` and can't
+      tell a user rule from a preset one. The alternative is teaching `Classifier`
+      about layers. Revisit if rule precedence gets more complex.
+- [ ] Nothing *calls* `load_settings()` / `prune()` in production yet — GUI wiring.
 
 ## Phase 5 — Testing, polish, delivery
-- [ ] Integration test: full GUI-driven run on a sample folder
-- [ ] Manual QA on Windows across the sample scenarios (Downloads / Photos / Work)
-- [ ] `ruff check .` clean
-- [ ] Package as a Windows app (installer / bundled exe)
-- [ ] User manual with screenshots
-- [ ] Demo video + project report
+- [x] Headless end-to-end integration test on a sample folder (`tests/test_integration.py`)
+- [x] `ruff check .` clean
+- [~] Packaging spike — PyInstaller spec skeleton + findings in `packaging/`.
+      **Unverified**: no build has ever run, because `main.py` opens no window.
+      Add `pyinstaller>=6.0` to requirements-dev when the GUI exists.
+- [ ] Integration test: full GUI-driven run on a sample folder — **blocked on Phase 2**
+- [ ] Manual QA on Windows across the sample scenarios — **blocked on Phase 2**
+- [ ] Package as a Windows app (installer / bundled exe) — **blocked on Phase 2**
+- [ ] User manual with screenshots — **blocked on Phase 2**
+- [ ] Demo video + project report — **blocked on Phase 2**
+
+### Carried over from the packaging spike (decide before the GUI hardens)
+- [ ] A bundled `config/` is **read-only** at runtime (under one-file it lives in
+      a temp dir deleted on exit), so user setting changes would silently vanish.
+      Settings and the history db need a writable `%LOCALAPPDATA%` location —
+      `history_db_path` already defaults there; `settings.json` does not.
 
 ---
 
 ## Open questions / decisions to revisit
 - [ ] Confirm `before/`/`after/` naming won't collide with real user folders
-      (consider a `.sfo_before` / `.sfo_after` prefix if it does)
+      (consider a `.sfo_before` / `.sfo_after` prefix if it does). Now looks
+      like a genuine bug, not just a naming nicety: `_is_scaffold` skips
+      anything under `before/`, so a user's real `before/` folder is silently
+      excluded from the plan *and* then has staged originals mixed into it.
+      Worth an explicit "this folder is already scaffolded / that name is
+      taken" guard in `apply`.
 - [ ] Whether to update `README.md` further or keep it as the academic spec
 - [ ] Optional: rename repo folder `SmartFileOragnizer` → `SmartFileOrganizer`

@@ -224,13 +224,31 @@ non-destructive before/after staging model:
 ```json
 {
   "rule": "string (unique identifier)",
-  "pattern": "string (glob or regex)",
+  "pattern": "string (glob)",
   "match_type": "filename | extension | metadata",
+  "metadata_key": "string (required when match_type is metadata)",
   "destination": "string (template with {year}/{month}/{project} etc.)",
   "case_sensitive": "boolean",
   "priority": "integer (higher = evaluated first)"
 }
 ```
+
+`metadata_key` names the metadata field `pattern` is tested against — one of
+`date_taken`, `date_created`, `author`, `artist`, `album`, `release_year`
+(`core.metadata.KNOWN_KEYS`). Loading a `metadata` rule without it is an error,
+since there would be nothing to match. Dates are compared as ISO text, so
+`"pattern": "2024-*"` selects a whole year.
+
+Destination templates accept `{year}`, `{month}`, `{month_num}`, `{project}`,
+`{category}`, and any of the metadata keys above. `{year}` stays date-derived
+(EXIF capture date, else a date in the filename, else creation date, else
+mtime) and is never shadowed by a metadata field.
+
+**Presets and user rules.** Presets ship in `rules/presets/*.json`; user rules
+live in `config/rules/*.json` and outrank them — a user rule reusing a preset's
+`rule` id replaces it. Files prefixed `_` or `.` are ignored. Rules requiring
+metadata are only evaluated when metadata is read, which happens *only* if some
+rule asks for it (see Performance below).
 
 ---
 
@@ -339,15 +357,28 @@ User rules and presets live in `config/rules/*.json`. Example custom rule file:
 }
 ```
 
-App-level settings (`config/settings.json`):
+App-level settings (`config/settings.json`), loaded by `settings.load_settings()`:
 ```json
 {
   "default_preset": "downloads_cleanup",
   "collision_strategy": "append_suffix",
   "dry_run_default": true,
-  "history_retention_days": 30
+  "history_retention_days": 30,
+  "history_db_path": "%LOCALAPPDATA%\\SmartFileOrganizer\\history.sqlite3"
 }
 ```
+
+| Key | Meaning |
+|---|---|
+| `default_preset` | Preset loaded when none is chosen |
+| `collision_strategy` | `append_suffix` (default) / `overwrite` / `skip` |
+| `dry_run_default` | Default for the dry-run toggle; `dry_run` stays a per-call argument |
+| `history_retention_days` | Operations older than this are pruned; `0` keeps them forever |
+| `history_db_path` | Operation log location; `%VARS%` and `~` are expanded |
+
+A missing file or key falls back to the documented default, so the app always
+starts. A key that is *present but unusable* (`"collision_strategy": "banana"`)
+raises rather than silently organizing files under settings nobody chose.
 
 ---
 
