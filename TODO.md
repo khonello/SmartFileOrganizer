@@ -33,27 +33,15 @@ decisions). No UI/visual design exists yet — it will be created from scratch.
 > Swapped ahead of metadata so the UI can be seen and validated early.
 > First design attempt was discarded; visual direction restarts from scratch.
 
-### 2A — Structure  ✅ agreed
-One navigation system (the sidebar), because splitting nav across sidebar and
-bottom bar leaves the sidebar irrelevant on half the pages. The chain is:
-**sidebar selects → body follows → buttons follow the body.**
+### 2A — Structure  ✅ agreed → **`UI_STRUCTURE.md`**
+Settled by argument and written up with the reasoning intact. The chain is
+**sidebar selects → body follows → buttons follow the body**; one navigation
+system; the body is a *diff*, not two file browsers. `UI_STRUCTURE.md` is the
+source of truth — read it before building any of 2C.
 
-- [x] Sidebar: `Organize` / `History` (expandable per run) / `Rules` / `Settings`
-- [x] Body: two panes, read as a **diff**, not two file browsers — selecting a
-      file on one side highlights its counterpart on the other. Pane meanings
-      shift by state (Preview: now vs proposed; Review: real `before/` vs
-      `after/`; Committed: collapse to one)
-- [x] Top bar: inputs + view controls (folder, preset, search) — not decisions
-- [x] Bottom bar: clickable status left (VS Code style), action set right
-- [x] Rule-layer badge on **every** row (`[C]`/`[P]`/`[M]`/`[E]`) — makes the
-      deterministic promise legible, and shows at a glance when rules aren't
-      firing (all `[E]`)
-- [x] Per-run rule snapshot, so history is reproducible — **landed**
-- [x] Dropped the dry-run toggle: Preview *is* the dry run; a toggle would read
-      as "apply, but don't apply"
-- [ ] **Naming**: never ship "Discard" — ambiguous between commit (irreversible)
-      and rollback (safe). Review's two choices are a *fork* and must sit side
-      by side: "Keep Organized" (confirm required) / "Restore Original"
+- [x] Regions, state machine, per-status action matrix, naming rules
+- [x] Per-run rule snapshot, so history is reproducible — **landed** (`batches`)
+- [x] Dropped the dry-run toggle: Preview *is* the dry run
 
 ### 2B — Design direction (blocked)
 - [ ] **Get an anchor from the user** (reference app / screenshot / palette / mood)

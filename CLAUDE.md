@@ -59,6 +59,26 @@ Layout (flat, at repo root): `main.py` (entry point — `python main.py`), `mode
 
 Rules and presets are JSON in `config/rules/*.json`; app settings in `config/settings.json`. Rule schema: `rule`, `pattern` (glob/regex), `match_type` (filename|extension|metadata), `destination` (template with `{year}/{month}/{project}`), `case_sensitive`, `priority`.
 
-## UI / design
+## UI
 
-**Not yet designed.** A previous design spec and HTML prototype were discarded; the visual direction will be created from scratch. Do not assume a palette, typeface, layout, or theme until the user establishes one — ask for an anchor (a reference app, screenshot, palette, or mood) before designing. The only fixed facts: it's a **PySide6** app on **Windows**, styled with **QSS** (static states) plus code-driven animation (`QPropertyAnimation` / `QGraphicsOpacityEffect`), and it must respect OS reduced-motion. The GUI modules in `gui/` are still stubs.
+Two separate things, at different stages — don't conflate them:
+
+**Structure is settled: see `UI_STRUCTURE.md`, which is the source of truth.** It
+fixes the regions, the state machine, the per-run-status action matrix, and the
+naming rules, with the reasoning for each. Highlights that are easy to get wrong:
+the chain runs **sidebar selects → body follows → buttons follow the body**, with
+*one* navigation system (the sidebar); the body is a **diff** with linked
+selection, not two file browsers; `Review` state lives **on disk**, so a folder
+can hold an unfinished run from a previous session (check `is_scaffolded` /
+`pending_batch` before planning, or the plan comes back empty and reads as
+"nothing to organize"); never ship the word **"Discard"** (ambiguous between the
+irreversible commit and the safe rollback), and never offer undo after commit.
+
+**Visual design does not exist.** A previous design spec and HTML prototype were
+discarded. Do not assume a palette, typeface, or theme until the user establishes
+one — ask for an anchor (a reference app, screenshot, palette, or mood) before
+designing. Two prior attempts failed precisely because they were invented without
+one. The fixed facts: it's a **PySide6** app on **Windows**, styled with **QSS**
+(a limited subset of CSS — no flexbox/grid, no transitions) plus code-driven
+animation (`QPropertyAnimation` / `QGraphicsOpacityEffect`), and it must respect
+OS reduced-motion. The GUI modules in `gui/` are still stubs.
