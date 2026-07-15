@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-The project is **scaffolded** and uses a **flat application layout** — the package modules live at the repo root (`models.py`, `organizer.py`, `core/`, `rules/`, `history/`, `gui/`), not under a nested `smart_file_organizer/` package. Imports are top-level (`from core.classifier import Classifier`, `from organizer import Organizer`). The deterministic core is real and tested (scan → classify → apply → commit/rollback, space preflight, dry-run, collision handling, preset/rule loading); the **metadata extractors** (`core/metadata.py`) and the **GUI** (`gui/`) are stubs that raise `NotImplementedError` with a docstring describing what to build. `README.md` is the functional/technical spec and `DESIGN_SPEC.md` the UI/visual spec — keep both in sync with what you build.
+The project is **scaffolded** and uses a **flat application layout** — the package modules live at the repo root (`models.py`, `organizer.py`, `core/`, `rules/`, `history/`, `gui/`), not under a nested `smart_file_organizer/` package. Imports are top-level (`from core.classifier import Classifier`, `from organizer import Organizer`). The deterministic core is real and tested (scan → classify → apply → commit/rollback, space preflight, dry-run, collision handling, preset/rule loading); the **metadata extractors** (`core/metadata.py`) and the **GUI** (`gui/`) are stubs that raise `NotImplementedError` with a docstring describing what to build. `README.md` is the functional/technical spec — keep it in sync with what you build. **There is no UI/visual design yet** — the design direction is being decided from scratch; don't assume a look until it's set.
 
 ## What this app is
 
@@ -54,13 +54,6 @@ Layout (flat, at repo root): `main.py` (entry point — `python main.py`), `mode
 
 Rules and presets are JSON in `config/rules/*.json`; app settings in `config/settings.json`. Rule schema: `rule`, `pattern` (glob/regex), `match_type` (filename|extension|metadata), `destination` (template with `{year}/{month}/{project}`), `case_sensitive`, `priority`.
 
-## UI / design constraints (from DESIGN_SPEC.md)
+## UI / design
 
-The visual design is deliberate and has **forbidden patterns** — read `DESIGN_SPEC.md` §7 before building or restyling any UI. Key non-negotiables:
-
-- **Fixed 5:2 landscape aspect ratio** (`height = 0.4 × width`); the resize handler locks height on drag. Layout is composed in horizontal bands — no tall hero sections or multi-row toolbars.
-- **Signature element:** the "Sorting Rail" (brass vertical line, left of the tree) where folder tabs animate in during scans. This is the one place the design spends energy.
-- **QSS handles static states only** (default/hover/pressed/disabled). All timed motion (fades, slides, staggers) is done in code via `QPropertyAnimation` / `QGraphicsOpacityEffect`, since QSS has no animation syntax.
-- **Forbidden:** colored left-edge accent bars (in any state), pill-shaped buttons/tags, drop shadows on dark surfaces, decorative gradients, numbered-sequence markers, stock icon-in-circle illustrations / emoji as functional icons. Selection/state is shown via fill, all-around border, glyph, or dot indicator.
-- **Respect OS reduced-motion:** every animation must collapse to an instant state change; no animation is required to understand the UI.
-- Design tokens (colors, type scale, fonts: Fraunces for section headers only, Inter for UI, IBM Plex Mono for filesystem values) are defined in `DESIGN_SPEC.md` §3 — use them rather than inventing new ones.
+**Not yet designed.** A previous design spec and HTML prototype were discarded; the visual direction will be created from scratch. Do not assume a palette, typeface, layout, or theme until the user establishes one — ask for an anchor (a reference app, screenshot, palette, or mood) before designing. The only fixed facts: it's a **PySide6** app on **Windows**, styled with **QSS** (static states) plus code-driven animation (`QPropertyAnimation` / `QGraphicsOpacityEffect`), and it must respect OS reduced-motion. The GUI modules in `gui/` are still stubs.

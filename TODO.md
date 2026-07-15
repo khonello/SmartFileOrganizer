@@ -2,8 +2,8 @@
 
 Step-by-step build plan for Smart File Organizer. Check items off (`- [x]`) as
 they land. Ordering is roughly dependency-first: core → metadata → services →
-GUI → polish. See `README.md` (functional spec), `DESIGN_SPEC.md` (UI spec), and
-`CLAUDE.md` (architecture + decisions).
+GUI → polish. See `README.md` (functional spec) and `CLAUDE.md` (architecture +
+decisions). No UI/visual design exists yet — it will be created from scratch.
 
 ---
 
@@ -12,7 +12,7 @@ GUI → polish. See `README.md` (functional spec), `DESIGN_SPEC.md` (UI spec), a
 - [x] `models.py` shared dataclasses (the contract between stages)
 - [x] `pyproject.toml`, `requirements.txt` / `requirements-dev.txt`, `.gitignore`
 - [x] Virtual environment (`environ/`)
-- [x] Docs: `README.md`, `DESIGN_SPEC.md`, `CLAUDE.md`
+- [x] Docs: `README.md`, `CLAUDE.md`
 - [ ] Initial git commit of the scaffold
 
 ## Phase 1 — Core engine
@@ -29,7 +29,27 @@ GUI → polish. See `README.md` (functional spec), `DESIGN_SPEC.md` (UI spec), a
 - [x] `rules/rule_loader.py` + 3 presets (downloads / photos / work)
 - [x] Headless pipeline tests (no Qt) — 14 passing
 
-## Phase 2 — Metadata & smart rules
+## Phase 2 — GUI design & preview  ⭐ current
+> Swapped ahead of metadata so the UI can be seen and validated early.
+> First design attempt was discarded; design direction restarts from scratch.
+
+### 2A — Design direction (do this before building anything)
+- [ ] Get an anchor from the user (reference app / screenshot / palette / mood)
+- [ ] Agree a design language, then write it up as a fresh design spec
+- [ ] Build a self-contained HTML prototype to validate look/feel before Qt
+- [ ] **Review with user, iterate until approved**
+
+### 2B — PySide6 implementation (port the approved design)
+- [ ] `gui/main_window.py` — `QMainWindow` shell (layout per approved design)
+- [ ] QSS design tokens + fonts; window chrome
+- [ ] `gui/preview_tree.py` — before/after file view; pending / conflict / selection states
+- [ ] `gui/settings_panel.py` — details / rule trace for the selected file
+- [ ] Action controls — dry-run toggle, progress, Undo/Apply → Rollback/Commit
+- [ ] Wire to `Organizer`: space check → preview → Apply → Commit / Rollback
+- [ ] Empty / dry-run / insufficient-space / error states
+- [ ] Respect OS reduced-motion; visible keyboard-focus outline on every control
+
+## Phase 3 — Metadata & smart rules
 - [ ] `core/metadata.py` — implement `extract_exif` (Pillow: `date_taken`)
 - [ ] `core/metadata.py` — implement `extract_pdf` (PyPDF2: author, creation date)
 - [ ] `core/metadata.py` — implement `extract_audio_tags` (mutagen: artist/album/year)
@@ -39,7 +59,7 @@ GUI → polish. See `README.md` (functional spec), `DESIGN_SPEC.md` (UI spec), a
 - [ ] Metadata destination placeholders (e.g. `{exif_year}`, `{author}`) in templating
 - [ ] Tests: metadata extraction (with sample fixture files) + preset-driven trigger
 
-## Phase 3 — Config, settings & safety
+## Phase 4 — Config, settings & safety
 - [ ] Load `config/settings.json` (default_preset, collision_strategy,
       dry_run_default, history_retention_days) into a settings object
 - [ ] User custom-rule loading from `config/rules/*.json`
@@ -47,24 +67,6 @@ GUI → polish. See `README.md` (functional spec), `DESIGN_SPEC.md` (UI spec), a
 - [ ] Collision strategy selection (overwrite / skip) surfaced through the config
 - [ ] Progress callback plumbing verified end-to-end for large batches
 - [ ] Tests: settings load + custom-rule precedence over presets
-
-## Phase 4 — GUI (Ledger theme, PySide6)
-> Read `DESIGN_SPEC.md` §7 (forbidden patterns) before building any UI.
-- [ ] `gui/main_window.py` — `QMainWindow` shell, three horizontal bands
-      (Rules rail / Preview / Details) + status bar
-- [ ] Fixed 5:2 aspect ratio (lock `height = 0.4 × width` on resize)
-- [ ] Design tokens as QSS (colors, radii) + fonts (Fraunces / Inter / IBM Plex Mono)
-- [ ] Left rail — preset cards + custom-rule entry
-- [ ] `gui/preview_tree.py` — before/after `QTreeView` with per-folder counts;
-      pending-move (brass dot) and conflict (rust triangle) row states
-- [ ] Sorting Rail signature element + staggered row reveal animation
-      (`QPropertyAnimation`, 180ms/row, 600ms cap)
-- [ ] `gui/settings_panel.py` — collapsible details (selected file metadata + rule hit)
-- [ ] Status bar — dry-run toggle, progress bar (with scanning sheen), Undo, Apply
-- [ ] Wire buttons to `Organizer`: space check → preview → Apply → Commit / Rollback
-- [ ] Empty / dry-run banner / error states (per `DESIGN_SPEC.md` §6)
-- [ ] Respect OS reduced-motion (collapse all animation to instant)
-- [ ] Keyboard focus outline (2px brass) on every interactive control
 
 ## Phase 5 — Testing, polish, delivery
 - [ ] Integration test: full GUI-driven run on a sample folder
