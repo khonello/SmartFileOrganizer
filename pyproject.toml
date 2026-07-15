@@ -1,0 +1,31 @@
+[project]
+name = "smart-file-organizer"
+version = "0.1.0"
+description = "Deterministic, rule-based desktop file organizer (no AI/ML)."
+requires-python = ">=3.10"
+readme = "README.md"
+
+[project.scripts]
+smart-file-organizer = "main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# Flat application layout: top-level packages + single-file modules at the root.
+[tool.setuptools]
+py-modules = ["main", "models", "organizer"]
+
+[tool.setuptools.packages.find]
+include = ["core*", "rules*", "history*", "gui*"]
+
+[tool.setuptools.package-data]
+rules = ["presets/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88

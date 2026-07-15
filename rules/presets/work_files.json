@@ -1,0 +1,30 @@
+{
+  "name": "Work files",
+  "description": "Group project files, invoices, and reports for a work folder.",
+  "rules": [
+    {
+      "rule": "invoice_detection",
+      "pattern": "*invoice*",
+      "match_type": "filename",
+      "destination": "Work/Documents/Invoices/{year}/{month}",
+      "case_sensitive": false,
+      "priority": 20
+    },
+    {
+      "rule": "report_detection",
+      "pattern": "*report*",
+      "match_type": "filename",
+      "destination": "Work/Documents/Reports/{year}",
+      "case_sensitive": false,
+      "priority": 18
+    },
+    {
+      "rule": "project_files",
+      "pattern": "*_v*",
+      "match_type": "filename",
+      "destination": "Work/Projects/{project}",
+      "case_sensitive": false,
+      "priority": 12
+    }
+  ]
+}

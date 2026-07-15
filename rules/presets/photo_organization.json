@@ -1,0 +1,22 @@
+{
+  "name": "Photo organization",
+  "description": "Sort images by year/month, separating screenshots and edited files.",
+  "rules": [
+    {
+      "rule": "screenshot_detection",
+      "pattern": "Screenshot_*",
+      "match_type": "filename",
+      "destination": "Screenshots/{year}",
+      "case_sensitive": false,
+      "priority": 20
+    },
+    {
+      "rule": "edited_photos",
+      "pattern": "*_edit*",
+      "match_type": "filename",
+      "destination": "Photos/Edited",
+      "case_sensitive": false,
+      "priority": 15
+    }
+  ]
+}

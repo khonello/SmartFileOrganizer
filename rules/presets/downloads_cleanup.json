@@ -1,0 +1,30 @@
+{
+  "name": "Downloads cleanup",
+  "description": "Sort a Downloads folder into documents, images, installers, and archives.",
+  "rules": [
+    {
+      "rule": "invoice_detection",
+      "pattern": "*invoice*",
+      "match_type": "filename",
+      "destination": "Documents/Invoices/{year}/{month}",
+      "case_sensitive": false,
+      "priority": 20
+    },
+    {
+      "rule": "installers",
+      "pattern": "*.exe",
+      "match_type": "filename",
+      "destination": "Installers",
+      "case_sensitive": false,
+      "priority": 10
+    },
+    {
+      "rule": "archives",
+      "pattern": "*.zip",
+      "match_type": "filename",
+      "destination": "Archives",
+      "case_sensitive": false,
+      "priority": 10
+    }
+  ]
+}
