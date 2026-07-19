@@ -16,7 +16,7 @@ import pytest
 import settings as settings_module
 from history.database import HistoryDB
 from models import CollisionStrategy, Operation, OperationType
-from settings import Settings, SettingsError, load_settings
+from settings import Settings, SettingsError, load_settings, save_settings
 
 # -- settings loading --------------------------------------------------------
 
@@ -124,6 +124,19 @@ def test_non_object_json_raises(tmp_path: Path):
 def test_retention_zero_is_allowed_as_keep_forever(tmp_path: Path):
     path = _write(tmp_path / "settings.json", {"history_retention_days": 0})
     assert load_settings(path).history_retention_days == 0
+
+
+def test_metadata_layer_defaults_off_and_loads(tmp_path: Path):
+    assert Settings().use_metadata_layer is False
+    path = _write(tmp_path / "settings.json", {"use_metadata_layer": True})
+    assert load_settings(path).use_metadata_layer is True
+
+
+def test_save_settings_round_trips(tmp_path: Path):
+    path = tmp_path / "settings.json"
+    original = Settings(use_metadata_layer=True, history_retention_days=7)
+    save_settings(original, path=path)
+    assert load_settings(path) == original
 
 
 # -- history retention -------------------------------------------------------

@@ -12,6 +12,7 @@ legal right now?".
 
 from __future__ import annotations
 
+from dataclasses import replace
 from enum import Enum, auto
 from pathlib import Path
 
@@ -43,7 +44,7 @@ from history.database import HistoryDB
 from models import Batch, BatchStatus, ClassificationResult
 from organizer import Organizer
 import mappings
-from settings import load_settings
+from settings import load_settings, save_settings
 
 DEFAULT_SIZE = (1280, 532)
 MINIMUM_SIZE = (960, 420)
@@ -170,6 +171,7 @@ class MainWindow(QMainWindow):
 
         self.rules_panel = RulesPanel()
         self.rules_panel.rules_changed.connect(self._rules_edited)
+        self.rules_panel.metadata_toggled.connect(self._metadata_toggled)
         self.body.addWidget(self.rules_panel)  # 3: rules
         return self.body
 
@@ -317,6 +319,7 @@ class MainWindow(QMainWindow):
             self._set_state(AppState.HISTORY)
         elif page == "rules":
             self.rules_panel.refresh()
+            self.rules_panel.set_metadata_enabled(self.settings.use_metadata_layer)
             self.body.setCurrentWidget(self.rules_panel)
             self.viewing = None
             self._set_state(AppState.HISTORY)
@@ -389,11 +392,14 @@ class MainWindow(QMainWindow):
     # -- the pipeline --------------------------------------------------------
 
     def _organizer(self) -> Organizer:
-        # The simple model: sort by file type, honouring the user's category
-        # overrides. No rule engine, no built-in keyword heuristics (that's B).
+        # Sort by file type with the user's overrides, plus the Tier-1 filename
+        # smarts (screenshots / invoices / versioned). Tier-2 metadata smarts
+        # (photos by date, music by artist) only when the user opts in — they
+        # open every file.
         return Organizer(
             category_overrides=mappings.load_mappings(),
-            use_pattern_layer=False,
+            use_pattern_layer=True,
+            use_metadata_layer=self.settings.use_metadata_layer,
             collision_strategy=self.settings.collision_strategy,
             history=self.db,
         )
@@ -430,7 +436,13 @@ class MainWindow(QMainWindow):
         self._set_state(AppState.RESUME)
 
     def _rules_edited(self) -> None:
-        """Your rules changed on disk (via the Rules page) — the plan follows."""
+        """A type mapping changed on the Rules page — the plan follows."""
+        self._replan_after_rules_change()
+
+    def _metadata_toggled(self, enabled: bool) -> None:
+        """Persist the smart-media toggle and re-plan with it applied."""
+        self.settings = replace(self.settings, use_metadata_layer=enabled)
+        save_settings(self.settings)
         self._replan_after_rules_change()
 
     def _replan_after_rules_change(self) -> None:

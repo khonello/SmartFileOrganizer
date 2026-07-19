@@ -65,6 +65,10 @@ class Settings:
     dry_run_default: bool = DEFAULT_DRY_RUN
     # 0 disables pruning (keep history forever).
     history_retention_days: int = DEFAULT_RETENTION_DAYS
+    # Opt-in "smart media": sort photos by EXIF date and music by artist/album.
+    # Off by default because it opens every file — a real cost the plain
+    # type→folder model never pays. Wired to a Rules-page toggle.
+    use_metadata_layer: bool = False
     history_db_path: Path = field(default_factory=default_db_path)
 
 
@@ -109,8 +113,29 @@ def _from_dict(data: dict, *, source: Path) -> Settings:
         history_retention_days=_retention_days(
             data, defaults.history_retention_days, source
         ),
+        use_metadata_layer=_bool(
+            data, "use_metadata_layer", defaults.use_metadata_layer, source
+        ),
         history_db_path=_db_path(data, defaults.history_db_path, source),
     )
+
+
+def save_settings(settings: Settings, *, path: Path | str | None = None) -> Path:
+    """Write settings back to ``config/settings.json`` (for the Rules toggle).
+
+    Serializes the known keys only; ``history_db_path`` is written as text.
+    """
+    path = Path(path) if path is not None else SETTINGS_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "collision_strategy": settings.collision_strategy.value,
+        "dry_run_default": settings.dry_run_default,
+        "history_retention_days": settings.history_retention_days,
+        "use_metadata_layer": settings.use_metadata_layer,
+        "history_db_path": str(settings.history_db_path),
+    }
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
 
 
 # -- per-key coercion --------------------------------------------------------

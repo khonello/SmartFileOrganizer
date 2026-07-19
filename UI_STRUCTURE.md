@@ -267,13 +267,14 @@ finished. Needs either a liveness check when listing (does the folder still hold
 
 ## Open
 
-- **Rules editing in v1?** ✅ Settled small: **sort by type, overridable.** No
-  rule engine in the UI — the Rules page is a table of file types (Images,
-  Documents, …) and where each goes, with sensible defaults you can override or
-  reset (`mappings.py`, saved to `config/mappings.json`). It works out of the
-  box, so there's nothing to set up before organizing. The full pattern/regex
-  rule engine was tried and pulled as over-complex; it survives in the backend
-  (`core/classifier.py`) for future "smart" behaviours but is off in the app.
+- **Rules editing in v1?** ✅ Settled small: **sort by type, overridable, plus a
+  few smart bits.** The Rules page is a table of file types → destination folders
+  (defaults you can override/reset — `mappings.py`, `config/mappings.json`), and
+  a **smart-media toggle**. Always-on Tier-1 filename smarts sort screenshots,
+  invoices, and versioned files into dated/project folders; the toggle adds
+  Tier-2 metadata smarts (photos by date, music by artist), off by default
+  because it opens every file. No user-authored patterns — the full rule engine
+  was pulled as over-complex; the smart bits are the curated slice kept on.
 - **Settings as a sidebar page or a dialog?** Page is consistent with the chain;
   dialog is more conventional on Windows and keeps the sidebar on the work.
 - **Filtering the diff.** Many files land in `Others/` or barely move. Worth a

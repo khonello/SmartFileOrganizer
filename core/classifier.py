@@ -112,7 +112,7 @@ class Classifier:
                 )
 
         category = pattern_matcher.category_for_extension(entry.extension)
-        folder = self.category_overrides.get(category, category)
+        folder = self._category_folder(category)
         return ClassificationResult(
             entry=entry,
             destination=base / folder / entry.path.name,
@@ -161,7 +161,10 @@ class Classifier:
         if "invoice" in lower:
             d = pattern_matcher.extract_date(name) or entry.modified.date()
             return (
-                Path("Documents") / "Invoices" / str(d.year) / _month(d),
+                Path(self._category_folder("Documents"))
+                / "Invoices"
+                / str(d.year)
+                / _month(d),
                 "invoice_detection",
             )
 
@@ -181,19 +184,31 @@ class Classifier:
         taken = entry.metadata.get("date_taken")
         if isinstance(taken, date):
             return (
-                Path("Images") / "Photos" / str(taken.year) / _month(taken),
+                Path(self._category_folder("Images"))
+                / "Photos"
+                / str(taken.year)
+                / _month(taken),
                 "exif_date_taken",
             )
 
         artist = entry.metadata.get("artist")
         if artist:
-            dest = Path("Audio") / _safe_component(artist)
+            dest = Path(self._category_folder("Audio")) / _safe_component(artist)
             album = entry.metadata.get("album")
             if album:
                 dest = dest / _safe_component(album)
             return dest, "audio_artist_tag"
 
         return None
+
+    def _category_folder(self, category: str) -> str:
+        """The destination folder for a type category, honouring user overrides.
+
+        So a Documents/Images/Audio override also moves the smart bits that nest
+        under it (invoices, photos, music) — the standalone Screenshots/Projects
+        roots have no category to override.
+        """
+        return self.category_overrides.get(category, category)
 
     # -- templating ----------------------------------------------------------
 

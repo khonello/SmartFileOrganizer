@@ -13,6 +13,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -34,6 +35,8 @@ class RulesPanel(QWidget):
 
     # Kept name: the window re-plans the diff whenever this fires.
     rules_changed = Signal()
+    # The "smart media" toggle changed (True = read file contents).
+    metadata_toggled = Signal(bool)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -72,6 +75,20 @@ class RulesPanel(QWidget):
         buttons.addWidget(self._btn_change)
         buttons.addWidget(self._btn_reset)
         layout.addLayout(buttons)
+
+        # Tier-2 "smart media" — opt-in because it opens every file.
+        self._smart = QCheckBox(
+            "Also sort photos and music by their contents — photos by the date "
+            "taken, music by artist/album. Reads each file, so it's slower."
+        )
+        self._smart.toggled.connect(self.metadata_toggled)
+        layout.addWidget(self._smart)
+
+    def set_metadata_enabled(self, enabled: bool) -> None:
+        """Reflect the persisted toggle without re-emitting the signal."""
+        self._smart.blockSignals(True)
+        self._smart.setChecked(enabled)
+        self._smart.blockSignals(False)
 
     def refresh(self) -> None:
         """Reload the overrides and rebuild the table."""

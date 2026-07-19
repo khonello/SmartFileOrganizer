@@ -73,13 +73,14 @@ Structure proved in the real medium before any styling. Drives the real
       destinations, collision suffix and all) with badges re-derived from the
       batch's snapshot rules. A resumed run now shows the same honest diff as a
       fresh apply (test: `test_review_plan_reconstructs_diff_from_disk`)
-- [x] Rules page (`gui/rules_panel.py`) — **sort by type, overridable.** A table
-      of file types → destination folders with sensible defaults; Change… /
-      Reset per type (`mappings.py`, `config/mappings.json`). Works out of the
-      box; editing re-plans the diff. The pattern/regex rule engine was built
-      then pulled as over-complex — it survives in `core/classifier.py`
-      (`use_pattern_layer` / `category_overrides`) for the future "smart" (B)
-      behaviours, but the app runs the plain type→folder path.
+- [x] Rules page (`gui/rules_panel.py`) — **sort by type, overridable, + smart
+      bits.** A table of file types → destination folders (Change… / Reset;
+      `mappings.py`, `config/mappings.json`), plus a smart-media toggle. Tier-1
+      filename smarts (screenshots / invoices / versioned) are always on; Tier-2
+      metadata smarts (photos by date, music by artist) are the toggle, off by
+      default (opens files). Smart bits honour category overrides. The full
+      pattern/regex rule engine was pulled as over-complex; the smart bits are
+      the curated slice kept on (`use_pattern_layer` / `use_metadata_layer`).
 - [x] Settings page shows the loaded `Settings` (read-only). Editing deferred.
 - [ ] **Cancel**: `apply` can't be interrupted mid-batch; needs a cooperative
       cancellation hook (changes the signature — decide before styling)
@@ -108,9 +109,9 @@ Structure proved in the real medium before any styling. Drives the real
 - [x] Metadata destination placeholders (`{author}`, `{artist}`, `{date_taken}`, …)
 - [x] Tests: metadata extraction (fixtures generated at runtime) + preset-driven
       trigger + a laziness assertion (no rule needs metadata ⇒ no file opened)
-- [ ] **Decide:** `Classifier(use_metadata_layer=True)` is opt-in and nothing sets
-      it, so the built-in metadata layer is currently unreachable. Wire it to a
-      setting (it costs a file read per entry, so it can't just default on).
+- [x] `Classifier(use_metadata_layer=True)` is now wired to a user setting
+      (`Settings.use_metadata_layer`, a Rules-page toggle saved to
+      `settings.json`) — off by default since it costs a file read per entry.
 
 ## Phase 4 — Config, settings & safety  ✅ done
 - [x] Load `config/settings.json` into a `Settings` object (`settings.py`), incl.

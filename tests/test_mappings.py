@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import mappings
@@ -10,8 +10,10 @@ from core.classifier import Classifier
 from models import FileEntry, RuleLayer
 
 
-def _entry(name: str, extension: str) -> FileEntry:
-    return FileEntry(Path("src") / name, 1, datetime(2026, 7, 1), extension)
+def _entry(name: str, extension: str, **metadata: object) -> FileEntry:
+    return FileEntry(
+        Path("src") / name, 1, datetime(2026, 7, 1), extension, dict(metadata)
+    )
 
 
 # -- the model ---------------------------------------------------------------
@@ -89,3 +91,47 @@ def test_pattern_layer_still_default_on_for_the_engine():
     # With the layer left on, the keyword heuristic wins over plain type.
     result = Classifier().classify(_entry("invoice.pdf", "pdf"), base=Path("out"))
     assert result.layer is RuleLayer.PATTERN
+
+
+# -- smart bits honour category overrides ------------------------------------
+
+
+def test_tier1_invoice_bit_respects_a_documents_override():
+    # The app runs with the pattern layer on; an invoice nests under Documents,
+    # so a Documents override moves it too.
+    classifier = Classifier(category_overrides={"Documents": "Work/Docs"})
+    result = classifier.classify(
+        _entry("Invoice_2026-01-26.pdf", "pdf"), base=Path("out")
+    )
+    assert result.layer is RuleLayer.PATTERN
+    assert result.destination == Path(
+        "out/Work/Docs/Invoices/2026/January/Invoice_2026-01-26.pdf"
+    )
+
+
+def test_tier1_screenshot_bit_is_standalone_ignoring_image_override():
+    # Screenshots go to their own root, not under Images, so an Images override
+    # does not touch them.
+    classifier = Classifier(category_overrides={"Images": "Pictures"})
+    result = classifier.classify(
+        _entry("Screenshot_2026-03-11.png", "png"), base=Path("out")
+    )
+    assert result.destination == Path("out/Screenshots/2026/Screenshot_2026-03-11.png")
+
+
+def test_tier2_photo_bit_respects_an_images_override():
+    entry = _entry("holiday.jpg", "jpg", date_taken=date(2024, 6, 15))
+    classifier = Classifier(
+        use_metadata_layer=True, category_overrides={"Images": "Pictures"}
+    )
+    result = classifier.classify(entry, base=Path("out"))
+    assert result.layer is RuleLayer.METADATA
+    assert result.destination == Path("out/Pictures/Photos/2024/June/holiday.jpg")
+
+
+def test_tier2_is_off_without_the_toggle():
+    # Same photo, metadata layer off: decided by plain type, no file opened.
+    entry = _entry("holiday.jpg", "jpg", date_taken=date(2024, 6, 15))
+    result = Classifier(use_pattern_layer=False).classify(entry, base=Path("out"))
+    assert result.layer is RuleLayer.EXTENSION
+    assert result.destination == Path("out/Images/holiday.jpg")

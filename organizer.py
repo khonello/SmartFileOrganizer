@@ -53,10 +53,12 @@ class Organizer:
         preset: str | None = None,
         category_overrides: dict[str, str] | None = None,
         use_pattern_layer: bool = True,
+        use_metadata_layer: bool = False,
     ) -> None:
         self.classifier = Classifier(
             rules,
             use_pattern_layer=use_pattern_layer,
+            use_metadata_layer=use_metadata_layer,
             category_overrides=category_overrides,
         )
         self.rules = list(rules or [])

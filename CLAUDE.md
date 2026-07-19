@@ -12,7 +12,12 @@ A **PySide6 desktop app** (Windows-only) that organizes files into a folder tree
 
 **The product model is simple: sort by file type.** Every file goes to a folder for its type (Images, Documents, Audio, …); each type has a default destination the user can override on the Rules page. That is the whole model the GUI exposes — see `mappings.py`. There are no user-authored patterns/priorities/templates: an earlier rule-engine UI was deliberately removed as over-complex.
 
-The layered **rule engine** in `core/classifier.py` (custom → pattern → metadata → extension) still exists and is fully tested, but the app runs it in its simplest form (`rules=[]`, `use_pattern_layer=False`, category overrides applied to the extension layer). It's kept as the substrate for future "smart" behaviours — the built-in keyword/date heuristics (invoices→dated folders, screenshots, EXIF photo dates) are one flag away (`use_pattern_layer=True`) when we choose to sprinkle them back in.
+On top of the type map sit a few **built-in "smart bits"** (still just the layered engine in `core/classifier.py`, driven with `rules=[]`):
+
+- **Tier-1 — filename only, always on** (`use_pattern_layer=True`): screenshots → `Screenshots/{year}`, invoices → `Documents/Invoices/{year}/{month}`, versioned files (`name_v1.2`) → `Projects/{name}`. No file reads, so they keep the model fast.
+- **Tier-2 — metadata, opt-in** (`use_metadata_layer`, a Rules-page toggle saved to `settings.json`): photos by EXIF date → `Images/Photos/{year}/{month}`, music by tag → `Audio/{artist}/{album}`. Off by default because it opens every file.
+
+The smart bits that nest under a real type category (invoices→Documents, photos→Images, music→Audio) honour that category's override via `Classifier._category_folder`; Screenshots/Projects are standalone roots. There are still no user-authored patterns/priorities/templates — an earlier rule-engine UI was removed as over-complex; only `mappings.py` overrides and the two toggles remain user-facing.
 
 ## Commands
 
