@@ -47,7 +47,7 @@ Empty ──▶ Scanning ──▶ Preview ────▶ Applying ──▶ Re
 |---|---|---|
 | `Empty` | No folder chosen | Choose folder |
 | `Scanning` | Building the plan | — (transient) |
-| `Preview` | Plan built, **nothing touched** | Organize N Files; change preset; re-scan |
+| `Preview` | Plan built, **nothing touched** | Organize N Files; re-scan |
 | `NoSpace` | `check_space` failed | Choose another folder; retry |
 | `Applying` | Copying, progress running | Cancel (see Gaps) |
 | `Review` | `before/` + `after/` **on disk** | Keep Organized; Restore Original |
@@ -90,7 +90,7 @@ Three consequences the UI must honor:
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  C:\Users\…\Downloads   [Choose…]     Preset: [Downloads ▾]  🔍  │  top: inputs
+│  C:\Users\…\Downloads          [Choose folder…]           🔍   │  top: inputs
 ├──────────┬───────────────────────┬───────────────────────────────┤
 │ Organize │ BEFORE                │ AFTER (proposed)              │
 │ History  │  📄 invoice.pdf ──────┼──▸ ▾ Documents/Invoices/…     │
@@ -99,12 +99,12 @@ Three consequences the UI must honor:
 │ Rules    │                       │  ▾ Images/                    │
 │ Settings │                       │    📷 photo.jpg          [E]  │
 ├──────────┴───────────────────────┴───────────────────────────────┤
-│ 247 files → 12 folders · Downloads (12 rules) · 340 GB free      │  bottom:
+│ 247 files → 12 folders · 340 GB free                             │  bottom:
 │                                    [Restore Original] [Keep →]   │  status+actions
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-**Top bar — inputs and view controls, never decisions.** Folder picker, preset,
+**Top bar — inputs and view controls, never decisions.** Folder picker and
 search/filter. Things you *choose*, not things you *commit to*.
 
 **Bottom bar — status left, actions right.** The left half is clickable status
@@ -157,8 +157,8 @@ pattern, `[M]` metadata, `[E]` extension fallback. Sourced from
 
 1. The product's whole claim is that decisions trace to an explicit rule — that
    is what makes it not-an-AI-organizer. The badge is that claim, made visible.
-2. It is genuinely diagnostic. If every row reads `[E]`, the rules are not
-   firing and the preset is doing nothing. You would never learn that from a
+2. It is genuinely diagnostic. If every row reads `[E]`, no rules are firing —
+   you have none, or none of them match. You would never learn that from a
    details panel you have to click into.
 
 Clicking opens the inspector: which rule fired, its pattern, the value matched
@@ -215,15 +215,13 @@ exist and the originals are gone. `UndoManager` raises `CannotUndoError`; it
 previously reported success and silently did nothing. The UI's job is to never
 put the user in front of that button.
 
-**Reuse-a-past-run's-rules is deferred, not dropped.** Re-running with a finished
-run's exact rules only *differs* from picking its preset in the dropdown once
-presets become **editable** — until then a run's snapshot equals the preset that
-produced it, so a dedicated "Reuse These Rules" button would duplicate the
-dropdown. The snapshot (`batches.rules_json`) is still recorded — it powers the
-honest per-run trace — so when an editor lands and snapshots can drift from live
-presets, the bridge returns as an action *inside the history body* ("Start a new
-run from these rules"), living with the run you're viewing rather than as a
-bottom-bar button that is disabled whenever you are not in History.
+**Reuse-a-past-run's-rules is deferred, not dropped.** A finished run snapshots
+the exact rules that produced it (`batches.rules_json`) — that powers the honest
+per-run trace. Rules are now a single editable set, so a run's snapshot *can*
+differ from your current rules (you may have changed them since). So "start a new
+run from this run's rules" is a meaningful future action — it belongs *inside the
+history body*, living with the run you're viewing, not as a bottom-bar button
+disabled whenever you're not in History. Until it exists, history stays read-only.
 
 ---
 
@@ -269,13 +267,13 @@ finished. Needs either a liveness check when listing (does the folder still hold
 
 ## Open
 
-- **Rules editing in v1?** ✅ Settled: the Rules page shows the two layers as two
-  layers — a read-only rule set (the shipped preset the top-bar dropdown picks)
-  under your own editable rules. Your rules save to `config/rules/my_rules.json`
-  and merge above the preset, winning on conflicts. The dropdown stays the
-  starter-set picker; the page is where you see and author. (Editing a *finished
-  run's* rules is still impossible — that forks via a future history-body action;
-  see "Actions per run status".)
+- **Rules editing in v1?** ✅ Settled small: **sort by type, overridable.** No
+  rule engine in the UI — the Rules page is a table of file types (Images,
+  Documents, …) and where each goes, with sensible defaults you can override or
+  reset (`mappings.py`, saved to `config/mappings.json`). It works out of the
+  box, so there's nothing to set up before organizing. The full pattern/regex
+  rule engine was tried and pulled as over-complex; it survives in the backend
+  (`core/classifier.py`) for future "smart" behaviours but is off in the app.
 - **Settings as a sidebar page or a dialog?** Page is consistent with the chain;
   dialog is more conventional on Windows and keeps the sidebar on the work.
 - **Filtering the diff.** Many files land in `Others/` or barely move. Worth a

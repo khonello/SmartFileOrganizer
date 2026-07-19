@@ -31,7 +31,6 @@ SETTINGS_PATH = CONFIG_DIR / "settings.json"
 
 APP_NAME = "SmartFileOrganizer"
 
-DEFAULT_PRESET = "downloads_cleanup"
 DEFAULT_COLLISION_STRATEGY = CollisionStrategy.APPEND_SUFFIX
 DEFAULT_DRY_RUN = True
 DEFAULT_RETENTION_DAYS = 30
@@ -59,7 +58,6 @@ def default_db_path() -> Path:
 class Settings:
     """Resolved app settings. Constructing with no arguments yields defaults."""
 
-    default_preset: str = DEFAULT_PRESET
     collision_strategy: CollisionStrategy = DEFAULT_COLLISION_STRATEGY
     # The default only; `dry_run` stays a per-call keyword on Organizer.apply /
     # commit / rollback, so a single Organizer can plan a dry run and then a real
@@ -102,7 +100,6 @@ def _read_json(path: Path) -> dict:
 def _from_dict(data: dict, *, source: Path) -> Settings:
     defaults = Settings()
     return Settings(
-        default_preset=_str(data, "default_preset", defaults.default_preset, source),
         collision_strategy=_collision_strategy(
             data, defaults.collision_strategy, source
         ),
@@ -122,15 +119,6 @@ def _from_dict(data: dict, *, source: Path) -> Settings:
 # present but unusable. `bool` is checked explicitly where an int is wanted:
 # it is an int subclass, so `"history_retention_days": true` would otherwise
 # sail through as 1.
-
-
-def _str(data: dict, key: str, default: str, source: Path) -> str:
-    value = data.get(key, default)
-    if not isinstance(value, str) or not value:
-        raise SettingsError(
-            f"{source}: {key} must be a non-empty string, got {value!r}"
-        )
-    return value
 
 
 def _bool(data: dict, key: str, default: bool, source: Path) -> bool:

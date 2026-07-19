@@ -20,7 +20,7 @@ class Inspector(QFrame):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setObjectName("inspector")
         self.setMinimumWidth(240)
 
         self._form = QFormLayout(self)

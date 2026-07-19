@@ -73,12 +73,13 @@ Structure proved in the real medium before any styling. Drives the real
       destinations, collision suffix and all) with badges re-derived from the
       batch's snapshot rules. A resumed run now shows the same honest diff as a
       fresh apply (test: `test_review_plan_reconstructs_diff_from_disk`)
-- [x] Rules page (`gui/rules_panel.py`) — the two layers shown as two layers:
-      a read-only **rule set** under your **editable rules**. Add / edit / delete
-      your own rules via a validated dialog; saved to the managed
-      `config/rules/my_rules.json` (`rule_loader.save_user_rules` /
-      `validate_rule`) and merged above the preset. Editing re-plans the diff —
-      immediately if it's showing, else on the next visit to Organize.
+- [x] Rules page (`gui/rules_panel.py`) — **sort by type, overridable.** A table
+      of file types → destination folders with sensible defaults; Change… /
+      Reset per type (`mappings.py`, `config/mappings.json`). Works out of the
+      box; editing re-plans the diff. The pattern/regex rule engine was built
+      then pulled as over-complex — it survives in `core/classifier.py`
+      (`use_pattern_layer` / `category_overrides`) for the future "smart" (B)
+      behaviours, but the app runs the plain type→folder path.
 - [x] Settings page shows the loaded `Settings` (read-only). Editing deferred.
 - [ ] **Cancel**: `apply` can't be interrupted mid-batch; needs a cooperative
       cancellation hook (changes the signature — decide before styling)

@@ -153,6 +153,42 @@ def test_end_to_end_apply_then_commit(tmp_path: Path):
         assert not organizer.is_scaffolded(folder)
 
 
+# -- a locked file doesn't sink the run --------------------------------------
+
+
+def test_apply_skips_a_file_locked_by_another_process(tmp_path: Path, monkeypatch):
+    """A file open elsewhere is left in place; the rest of the run still lands."""
+    from core import file_ops
+
+    folder = tmp_path / "Downloads"
+    folder.mkdir()
+    (folder / "free.txt").write_text("free")
+    (folder / "locked.txt").write_text("locked")
+
+    real_move = file_ops.move
+    locked = folder / "locked.txt"
+
+    def flaky_move(src, dst, *, dry_run=False):
+        # Simulate Windows "file in use" for the one locked original.
+        if Path(src) == locked:
+            raise PermissionError("[WinError 32] file in use")
+        return real_move(src, dst, dry_run=dry_run)
+
+    monkeypatch.setattr(file_ops, "move", flaky_move)
+
+    organizer = Organizer()
+    organizer.apply(folder, organizer.build_plan(folder))
+
+    # The locked file was reported and left exactly where it was.
+    assert organizer.last_skipped == [locked]
+    assert (folder / "locked.txt").read_text() == "locked"
+    assert not (folder / "before" / "locked.txt").exists()
+
+    # Everything else went through the normal before/ + after/ path.
+    assert (folder / "before" / "free.txt").read_text() == "free"
+    assert (folder / "after" / "Documents" / "free.txt").read_text() == "free"
+
+
 # -- resume: the diff rebuilt from disk --------------------------------------
 
 

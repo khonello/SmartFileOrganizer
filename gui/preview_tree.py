@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui import theme
 from models import ClassificationResult, RuleLayer
 
 # The rule engine, made legible on every row. If a whole plan reads "E", the
@@ -104,8 +106,10 @@ class DiffPanes(QSplitter):
 
             dest_rel = result.destination.relative_to(after_root)
             right = self._ensure_path(self.after, after_nodes, dest_rel)
-            right.setText(1, _BADGE.get(result.layer, "?"))
+            letter = _BADGE.get(result.layer, "?")
+            right.setText(1, letter)
             right.setToolTip(1, f"{result.layer.value} — {result.rule_name}")
+            self._paint_badge(right, letter)
 
             for item in (left, right):
                 item.setData(0, _RESULT_ROLE, result)
@@ -147,6 +151,18 @@ class DiffPanes(QSplitter):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         return tree
+
+    def _paint_badge(self, item: QTreeWidgetItem, letter: str) -> None:
+        """Colour a badge cell from the active theme — QSS can't reach it, as
+        the badge is tree-cell text (see ``gui.theme``)."""
+        bg, fg, bold = theme.badge_style(letter)
+        item.setForeground(1, QColor(fg))
+        if bg is not None:
+            item.setBackground(1, QColor(bg))
+        font = item.font(1)
+        font.setBold(bold)
+        item.setFont(1, font)
+        item.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
 
     def _ensure_path(
         self,

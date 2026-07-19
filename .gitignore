@@ -23,6 +23,9 @@ htmlcov/
 *.sqlite3
 *.db
 
+# User's local category overrides (written by the app at runtime)
+config/mappings.json
+
 # Editor / OS
 .vscode/
 .idea/

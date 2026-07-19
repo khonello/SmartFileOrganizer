@@ -40,13 +40,6 @@ UNKNOWN = "Unknown"
 # track tagged "AC/DC" must not silently become a nested directory.
 _ILLEGAL_COMPONENT_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
-# The non-metadata placeholders a destination template may use. Must stay in
-# step with the reserved names ``_render_template`` sets below; the full valid
-# set is these plus every key in ``metadata.KNOWN_KEYS``.
-RESERVED_TEMPLATE_FIELDS = frozenset(
-    {"year", "month", "month_num", "project", "category"}
-)
-
 
 class Classifier:
     """Applies user rules then built-in layers to propose a destination."""
@@ -56,10 +49,19 @@ class Classifier:
         rules: list[Rule] | None = None,
         *,
         use_metadata_layer: bool = False,
+        use_pattern_layer: bool = True,
+        category_overrides: dict[str, str] | None = None,
     ) -> None:
         # Sorted once so classify() stays O(rules) per file with no re-sorting.
         self.rules = sorted(rules or [], key=lambda r: r.priority, reverse=True)
         self.use_metadata_layer = use_metadata_layer
+        # The built-in invoice/screenshot/version heuristics. On by default;
+        # the simple type->folder model (see mappings.py) turns them off so a
+        # file is decided by its type alone.
+        self.use_pattern_layer = use_pattern_layer
+        # category -> destination folder, applied to the extension layer, so the
+        # user can send "Images" to "Pictures/Camera" without writing a rule.
+        self.category_overrides = dict(category_overrides or {})
         # Decided once per Classifier, not per file: reading metadata means
         # opening every file, so we only do it when something asks.
         self.needs_metadata = use_metadata_layer or any(
@@ -87,15 +89,16 @@ class Classifier:
                     rule_name=rule.rule,
                 )
 
-        pattern_hit = self._pattern_layer(entry)
-        if pattern_hit is not None:
-            dest, rule_name = pattern_hit
-            return ClassificationResult(
-                entry=entry,
-                destination=base / dest / entry.path.name,
-                layer=RuleLayer.PATTERN,
-                rule_name=rule_name,
-            )
+        if self.use_pattern_layer:
+            pattern_hit = self._pattern_layer(entry)
+            if pattern_hit is not None:
+                dest, rule_name = pattern_hit
+                return ClassificationResult(
+                    entry=entry,
+                    destination=base / dest / entry.path.name,
+                    layer=RuleLayer.PATTERN,
+                    rule_name=rule_name,
+                )
 
         if self.use_metadata_layer:
             metadata_hit = self._metadata_layer(entry)
@@ -109,11 +112,12 @@ class Classifier:
                 )
 
         category = pattern_matcher.category_for_extension(entry.extension)
+        folder = self.category_overrides.get(category, category)
         return ClassificationResult(
             entry=entry,
-            destination=base / category / entry.path.name,
+            destination=base / folder / entry.path.name,
             layer=RuleLayer.EXTENSION,
-            rule_name="extension_fallback",
+            rule_name=f"type: {category}",
         )
 
     # -- layers --------------------------------------------------------------
@@ -279,34 +283,6 @@ def _template_fields(template: str) -> set[str]:
         return set()
     # "{author.upper}" / "{tags[0]}" still hang off the base field name.
     return {re.split(r"[.\[]", name, maxsplit=1)[0] for name in fields}
-
-
-def valid_template_fields() -> set[str]:
-    """Every placeholder name a destination template may legally use."""
-    return RESERVED_TEMPLATE_FIELDS | set(metadata.KNOWN_KEYS)
-
-
-def validate_destination_template(template: str) -> None:
-    """Raise ``ValueError`` if a destination template can't render.
-
-    Catches the two ways a template goes wrong before it ever reaches
-    :meth:`Classifier._render_template` at plan time: malformed braces, and a
-    placeholder that isn't a real field (the ``{yeer}`` typo). Lets the rule
-    editor reject a bad template at save instead of surfacing it as a failed
-    scan later.
-    """
-    try:
-        list(Formatter().parse(template))
-    except ValueError as exc:
-        raise ValueError(f"malformed destination template: {exc}") from exc
-    unknown = _template_fields(template) - valid_template_fields()
-    if unknown:
-        shown = ", ".join("{" + name + "}" for name in sorted(unknown))
-        available = ", ".join(sorted(valid_template_fields()))
-        raise ValueError(
-            f"destination uses unknown placeholder(s): {shown}; "
-            f"available: {available}"
-        )
 
 
 def _as_text(value: object) -> str:

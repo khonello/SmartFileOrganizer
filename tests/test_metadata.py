@@ -264,7 +264,7 @@ def test_metadata_rule_without_key_is_inert(tmp_path: Path):
     result = Classifier([rule]).classify(
         _entry(_make_pdf(tmp_path / "doc.pdf")), base=Path("out")
     )
-    assert result.rule_name == "extension_fallback"
+    assert result.rule_name == "type: Documents"
 
 
 # -- built-in metadata layer + precedence ------------------------------------

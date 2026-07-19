@@ -32,7 +32,7 @@ def test_extension_fallback():
     entry = FileEntry(Path("a/notes.txt"), 1, datetime(2026, 7, 1), "txt")
     result = Classifier().classify(entry, base=Path("out"))
     assert result.destination == Path("out/Documents/notes.txt")
-    assert result.rule_name == "extension_fallback"
+    assert result.rule_name == "type: Documents"
 
 
 def test_pattern_layer_invoice_beats_extension():

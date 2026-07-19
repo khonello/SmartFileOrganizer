@@ -18,7 +18,6 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
-    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -35,6 +34,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui import theme
 from gui.preview_tree import DiffPanes
 from gui.rules_panel import RulesPanel
 from gui.settings_panel import Inspector
@@ -42,36 +42,14 @@ from gui.worker import Worker
 from history.database import HistoryDB
 from models import Batch, BatchStatus, ClassificationResult
 from organizer import Organizer
-from rules import rule_loader
+import mappings
 from settings import load_settings
 
-DEFAULT_SIZE = (1280, 760)
-MINIMUM_SIZE = (960, 600)
+DEFAULT_SIZE = (1280, 532)
+MINIMUM_SIZE = (960, 420)
 
 _BATCH_ROLE = Qt.ItemDataRole.UserRole
 _PAGE_ROLE = Qt.ItemDataRole.UserRole + 1
-
-# PLACEHOLDER colours — throwaway, NOT a palette decision. They exist only so
-# the button grouping ("colour groups, fork stays adjacent") can be judged in
-# the greybox; real colours arrive with the design anchor (see CLAUDE.md and
-# UI_STRUCTURE.md). The grouping they express: Organize + Keep read as filled/
-# affirmative ("make it real"), Restore as a recessive ghost (the safe way out);
-# Keep is warmed toward caution because it is the one irreversible action.
-_PLACEHOLDER_BUTTON_QSS = """
-QPushButton { padding: 4px 14px; border-radius: 4px; }
-QPushButton[role="affirmative"] {
-    background: #3b6db5; color: white; border: 1px solid #2f5896;
-}
-QPushButton[role="caution"] {
-    background: #c9862b; color: white; border: 1px solid #a86f1f;
-}
-QPushButton[role="quiet"] {
-    background: transparent; color: palette(text); border: 1px solid palette(mid);
-}
-QPushButton:disabled {
-    background: palette(button); color: palette(mid); border: 1px solid palette(mid);
-}
-"""
 
 
 class AppState(Enum):
@@ -113,6 +91,7 @@ class MainWindow(QMainWindow):
         self.viewing: Batch | None = None  # the history entry being browsed
         self._page = "organize"  # which sidebar page the body is showing
         self._needs_rescan = False  # rules/set changed while off the Organize page
+        self._apply_organizer: Organizer | None = None  # for post-apply skips
         self._worker: Worker | None = None
 
         self._build()
@@ -142,7 +121,7 @@ class MainWindow(QMainWindow):
     def _build_top_bar(self) -> QWidget:
         """Inputs and view controls — things you choose, never things you commit to."""
         bar = QFrame()
-        bar.setFrameShape(QFrame.Shape.StyledPanel)
+        bar.setObjectName("topBar")
         row = QHBoxLayout(bar)
 
         self.folder_label = QLabel("No folder selected")
@@ -151,21 +130,12 @@ class MainWindow(QMainWindow):
         choose = QPushButton("Choose…")
         choose.clicked.connect(self._choose_folder)
         row.addWidget(choose)
-
-        row.addWidget(QLabel("Rule set:"))
-        self.preset_combo = QComboBox()
-        self.preset_combo.addItem("(none)")
-        self.preset_combo.addItems(rule_loader.available_presets())
-        default = self.settings.default_preset
-        if (index := self.preset_combo.findText(default)) != -1:
-            self.preset_combo.setCurrentIndex(index)
-        self.preset_combo.currentTextChanged.connect(self._preset_changed)
-        row.addWidget(self.preset_combo)
         return bar
 
     def _build_sidebar(self) -> QWidget:
         """The one navigation system. History is a page that has children."""
         self.sidebar = QTreeWidget()
+        self.sidebar.setObjectName("sidebar")
         self.sidebar.setHeaderHidden(True)
         self.sidebar.setMinimumWidth(160)
 
@@ -213,7 +183,7 @@ class MainWindow(QMainWindow):
         via the ``role`` property, not by position.
         """
         bar = QFrame()
-        bar.setFrameShape(QFrame.Shape.StyledPanel)
+        bar.setObjectName("bottomBar")
         row = QHBoxLayout(bar)
 
         self.status = QLabel("Choose a folder to begin.")
@@ -245,8 +215,6 @@ class MainWindow(QMainWindow):
         row.addSpacing(20)
         row.addWidget(self.btn_restore)
         row.addWidget(self.btn_keep)
-
-        bar.setStyleSheet(_PLACEHOLDER_BUTTON_QSS)
         return bar
 
     # -- the chain: state -> what is legal -----------------------------------
@@ -281,7 +249,6 @@ class MainWindow(QMainWindow):
         self.status.setText(self._status_text())
 
     def _status_text(self) -> str:
-        preset = self.preset_combo.currentText()
         match self.state:
             case AppState.EMPTY:
                 return "Choose a folder to begin."
@@ -289,10 +256,7 @@ class MainWindow(QMainWindow):
                 return "Scanning…"
             case AppState.PREVIEW:
                 folders = len({r.destination.parent for r in self.plan})
-                return (
-                    f"{len(self.plan)} files → {folders} folders "
-                    f"· rule set: {preset}"
-                )
+                return f"{len(self.plan)} files → {folders} folders"
             case AppState.NO_SPACE:
                 return self._space_message
             case AppState.APPLYING:
@@ -308,7 +272,7 @@ class MainWindow(QMainWindow):
                 return "Restored — the folder is back as it was."
             case AppState.HISTORY:
                 if self._page == "rules":
-                    return "Your rules apply on top of the rule set and win."
+                    return "Rules — applied top-down by priority; first match wins."
                 if self._page == "settings":
                     return "Settings — read-only in this version."
                 return self._history_status()
@@ -352,7 +316,7 @@ class MainWindow(QMainWindow):
             self.history_view.setText("Select a run.")
             self._set_state(AppState.HISTORY)
         elif page == "rules":
-            self.rules_panel.set_rule_set(self._current_preset())
+            self.rules_panel.refresh()
             self.body.setCurrentWidget(self.rules_panel)
             self.viewing = None
             self._set_state(AppState.HISTORY)
@@ -368,17 +332,11 @@ class MainWindow(QMainWindow):
             self._show_batch(self.viewing)
             self._set_state(AppState.HISTORY)
 
-    def _current_preset(self) -> str | None:
-        """The chosen rule set, or ``None`` for the "(none)" entry."""
-        preset = self.preset_combo.currentText()
-        return None if preset == "(none)" else preset
-
     def _settings_text(self) -> str:
         """The loaded settings, read-only — the source of the run's defaults."""
         s = self.settings
         return (
             "Settings — read-only in this version.\n\n"
-            f"  Default rule set:    {s.default_preset}\n"
             f"  Collision strategy:  {s.collision_strategy.value}\n"
             f"  History retention:   {s.history_retention_days} days"
             f"{'  (keep forever)' if s.history_retention_days == 0 else ''}\n"
@@ -408,10 +366,9 @@ class MainWindow(QMainWindow):
             f"  Folder:     {batch.folder}\n"
             f"  When:       {batch.started_at:%Y-%m-%d %H:%M}\n"
             f"  Status:     {batch.status.value}\n"
-            f"  Rule set:   {batch.preset or '(none)'}\n"
             f"  Collisions: {batch.collision_strategy.value}\n\n"
             f"Rules as they were when this run happened "
-            f"(a snapshot — editing a rule set since then hasn't changed this):\n"
+            f"(a snapshot — editing a rule since then hasn't changed this):\n"
             f"{rules or '    (none)'}"
         )
 
@@ -432,13 +389,13 @@ class MainWindow(QMainWindow):
     # -- the pipeline --------------------------------------------------------
 
     def _organizer(self) -> Organizer:
-        preset = self._current_preset()
-        rules = rule_loader.load_effective_rules(preset)
+        # The simple model: sort by file type, honouring the user's category
+        # overrides. No rule engine, no built-in keyword heuristics (that's B).
         return Organizer(
-            rules,
+            category_overrides=mappings.load_mappings(),
+            use_pattern_layer=False,
             collision_strategy=self.settings.collision_strategy,
             history=self.db,
-            preset=preset,
         )
 
     def _choose_folder(self) -> None:
@@ -471,13 +428,6 @@ class MainWindow(QMainWindow):
         self.plan = []
         self._render_review()  # the staged before/ and after/ are real on disk
         self._set_state(AppState.RESUME)
-
-    def _preset_changed(self) -> None:
-        # Switching the rule set is visible even with no folder: the Rules page
-        # reflects it live. Then re-plan (or mark stale) so the diff follows.
-        if self._page == "rules":
-            self.rules_panel.set_rule_set(self._current_preset())
-        self._replan_after_rules_change()
 
     def _rules_edited(self) -> None:
         """Your rules changed on disk (via the Rules page) — the plan follows."""
@@ -539,6 +489,7 @@ class MainWindow(QMainWindow):
         if folder is None or not plan:
             return
         organizer = self._organizer()
+        self._apply_organizer = organizer  # kept so _applied can read skips
         self.progress.setRange(0, len(plan))
         self.progress.setValue(0)
         self._set_state(AppState.APPLYING)
@@ -550,6 +501,9 @@ class MainWindow(QMainWindow):
 
     def _applied(self, batch_id: object) -> None:
         self.batch_id = str(batch_id)
+        skipped = getattr(self._apply_organizer, "last_skipped", [])
+        if skipped:
+            self._warn_skipped(skipped)
         self._refresh_history()
         self._render_review()  # redraw from the real before/ and after/ on disk
         self._set_state(AppState.REVIEW)
@@ -576,6 +530,17 @@ class MainWindow(QMainWindow):
             self.panes.show_message(
                 "[before/ — nothing staged]", "[after/ — nothing organized]"
             )
+
+    def _warn_skipped(self, skipped: list[Path]) -> None:
+        """Tell the user which files were in use and left in place — once."""
+        shown = "\n".join(f"  • {p.name}" for p in skipped[:12])
+        more = f"\n  …and {len(skipped) - 12} more" if len(skipped) > 12 else ""
+        QMessageBox.information(
+            self,
+            "Some files were in use",
+            f"{len(skipped)} file(s) were open in another program and left in "
+            f"place — everything else was organized:\n\n{shown}{more}",
+        )
 
     def _commit(self) -> None:
         if self.folder is None:
@@ -653,6 +618,7 @@ class MainWindow(QMainWindow):
 def run(argv: list[str]) -> int:
     """Create the QApplication, show the main window, and run the event loop."""
     app = QApplication(argv)
+    theme.apply(app)
     window = MainWindow()
     window.show()
     return app.exec()

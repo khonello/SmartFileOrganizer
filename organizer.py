@@ -51,11 +51,20 @@ class Organizer:
         collision_strategy: CollisionStrategy = CollisionStrategy.APPEND_SUFFIX,
         history: HistoryDB | None = None,
         preset: str | None = None,
+        category_overrides: dict[str, str] | None = None,
+        use_pattern_layer: bool = True,
     ) -> None:
-        self.classifier = Classifier(rules)
+        self.classifier = Classifier(
+            rules,
+            use_pattern_layer=use_pattern_layer,
+            category_overrides=category_overrides,
+        )
         self.rules = list(rules or [])
         self.collision_strategy = collision_strategy
         self.history = history
+        # Files the last apply() couldn't move (locked by another process, etc.)
+        # and left in place. The caller reports these; the run still succeeds.
+        self.last_skipped: list[Path] = []
         # Recorded onto each batch, so a run's history entry can say which
         # preset it came from rather than just showing the flattened rules.
         self.preset = preset
@@ -113,18 +122,34 @@ class Organizer:
                     status=BatchStatus.APPLIED,
                 )
             )
+        self.last_skipped = []
         for index, result in enumerate(plan, start=1):
             rel = result.entry.path.relative_to(folder)
             staged = before / rel
-            file_ops.move(result.entry.path, staged, dry_run=dry_run)
+            try:
+                file_ops.move(result.entry.path, staged, dry_run=dry_run)
+            except OSError:
+                # Locked by another process (Windows "file in use") or otherwise
+                # unmovable: leave the original where it is and carry on. The
+                # original is untouched — the move is the first thing we tried.
+                self.last_skipped.append(result.entry.path)
+                if progress is not None:
+                    progress(index, total)
+                continue
 
             operation = file_ops.plan_copy(
                 staged, result, self.collision_strategy, batch_id=batch_id
             )
             if operation is not None:
-                if self.history is not None and not dry_run:
-                    self.history.log(operation)  # log BEFORE the copy
-                file_ops.copy(operation, dry_run=dry_run)
+                try:
+                    if self.history is not None and not dry_run:
+                        self.history.log(operation)  # log BEFORE the copy
+                    file_ops.copy(operation, dry_run=dry_run)
+                except OSError:
+                    # Couldn't write the organized copy: undo the stage so the
+                    # original isn't stranded in before/ with no after/ twin.
+                    file_ops.move(staged, result.entry.path, dry_run=dry_run)
+                    self.last_skipped.append(result.entry.path)
             if progress is not None:
                 progress(index, total)
         return batch_id
@@ -210,11 +235,13 @@ class Organizer:
             Path(op.source_path): Path(op.destination_path)
             for op in self.history.operations_for_batch(batch.batch_id)
         }
-        classifier = Classifier(batch.rules)
         base = folder / AFTER_DIR
         results: list[ClassificationResult] = []
         for entry in scan(before):
-            result = classifier.classify(entry, base=base)
+            # Re-derive the badge with this organizer's own classifier; the
+            # destination shown always comes from the log (below), so a config
+            # drift only affects the badge, never where a file is said to go.
+            result = self.classifier.classify(entry, base=base)
             dest = actual_dest.get(entry.path)
             if dest is not None:
                 result = replace(result, destination=dest)
