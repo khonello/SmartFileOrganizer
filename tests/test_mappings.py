@@ -7,6 +7,7 @@ from pathlib import Path
 
 import mappings
 from core.classifier import Classifier
+from core.pattern_matcher import category_for_extension
 from models import FileEntry, RuleLayer
 
 
@@ -28,6 +29,17 @@ def test_categories_cover_the_extension_map_plus_others():
 
 def test_default_destination_is_the_category_name():
     assert mappings.default_destination("Images") == "Images"
+
+
+def test_extension_coverage_includes_the_common_types():
+    assert category_for_extension("torrent") == "Torrents"
+    assert category_for_extension("ttf") == "Fonts"
+    assert category_for_extension("epub") == "Ebooks"
+    assert category_for_extension("iso") == "Archives"
+    assert category_for_extension("webm") == "Video"
+    assert category_for_extension("json") == "Code"
+    assert category_for_extension(".JPG") == "Images"  # dot + case tolerated
+    assert category_for_extension("xyz") == "Others"  # unknown still falls back
 
 
 def test_effective_applies_overrides_over_defaults():

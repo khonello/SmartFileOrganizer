@@ -77,9 +77,10 @@ class RulesPanel(QWidget):
         layout.addLayout(buttons)
 
         # Tier-2 "smart media" — opt-in because it opens every file.
-        self._smart = QCheckBox(
-            "Also sort photos and music by their contents — photos by the date "
-            "taken, music by artist/album. Reads each file, so it's slower."
+        self._smart = QCheckBox("Advanced analysis using file metadata (slower)")
+        self._smart.setToolTip(
+            "Sorts photos by the date taken and music by artist/album. "
+            "Reads each file's metadata, so it's slower."
         )
         self._smart.toggled.connect(self.metadata_toggled)
         layout.addWidget(self._smart)

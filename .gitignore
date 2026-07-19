@@ -23,8 +23,10 @@ htmlcov/
 *.sqlite3
 *.db
 
-# User's local category overrides (written by the app at runtime)
+# User's local config, written by the app at runtime (falls back to code
+# defaults when absent — see settings.py / mappings.py)
 config/mappings.json
+config/settings.json
 
 # Editor / OS
 .vscode/

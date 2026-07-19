@@ -19,25 +19,52 @@ from datetime import date
 
 EXTENSION_CATEGORIES: dict[str, str] = {
     # Documents
-    "pdf": "Documents", "docx": "Documents", "doc": "Documents",
-    "txt": "Documents", "xlsx": "Documents", "xls": "Documents",
-    "pptx": "Documents", "csv": "Documents",
+    "pdf": "Documents", "doc": "Documents", "docx": "Documents",
+    "txt": "Documents", "rtf": "Documents", "odt": "Documents",
+    "md": "Documents", "tex": "Documents", "log": "Documents",
+    "xls": "Documents", "xlsx": "Documents", "csv": "Documents",
+    "ods": "Documents", "ppt": "Documents", "pptx": "Documents",
+    "odp": "Documents", "pages": "Documents", "key": "Documents",
+    "numbers": "Documents",
+    # Ebooks
+    "epub": "Ebooks", "mobi": "Ebooks", "azw": "Ebooks",
+    "azw3": "Ebooks", "fb2": "Ebooks",
     # Images
-    "jpg": "Images", "jpeg": "Images", "png": "Images",
-    "gif": "Images", "svg": "Images", "webp": "Images", "heic": "Images",
+    "jpg": "Images", "jpeg": "Images", "png": "Images", "gif": "Images",
+    "bmp": "Images", "tiff": "Images", "tif": "Images", "svg": "Images",
+    "webp": "Images", "heic": "Images", "avif": "Images", "ico": "Images",
+    "psd": "Images", "ai": "Images", "raw": "Images", "cr2": "Images",
+    "nef": "Images", "arw": "Images", "dng": "Images",
     # Video
-    "mp4": "Video", "avi": "Video", "mkv": "Video", "mov": "Video",
+    "mp4": "Video", "m4v": "Video", "avi": "Video", "mkv": "Video",
+    "mov": "Video", "wmv": "Video", "flv": "Video", "webm": "Video",
+    "mpg": "Video", "mpeg": "Video", "3gp": "Video",
     # Audio
     "mp3": "Audio", "wav": "Audio", "flac": "Audio", "m4a": "Audio",
+    "aac": "Audio", "ogg": "Audio", "opus": "Audio", "wma": "Audio",
+    "aiff": "Audio", "mid": "Audio", "midi": "Audio",
     # Archives
     "zip": "Archives", "rar": "Archives", "7z": "Archives",
-    "tar": "Archives", "gz": "Archives",
+    "tar": "Archives", "gz": "Archives", "bz2": "Archives",
+    "xz": "Archives", "tgz": "Archives", "zst": "Archives",
+    "iso": "Archives", "cab": "Archives",
     # Code
-    "py": "Code", "js": "Code", "ts": "Code", "java": "Code",
-    "cpp": "Code", "c": "Code", "h": "Code", "go": "Code", "rs": "Code",
-    # Installers
-    "exe": "Installers", "dmg": "Installers", "pkg": "Installers",
-    "msi": "Installers",
+    "py": "Code", "js": "Code", "ts": "Code", "jsx": "Code", "tsx": "Code",
+    "java": "Code", "kt": "Code", "c": "Code", "h": "Code", "cpp": "Code",
+    "cs": "Code", "go": "Code", "rs": "Code", "rb": "Code", "php": "Code",
+    "swift": "Code", "sh": "Code", "sql": "Code", "r": "Code", "lua": "Code",
+    "pl": "Code", "dart": "Code", "scala": "Code", "vue": "Code",
+    "html": "Code", "css": "Code", "scss": "Code", "json": "Code",
+    "xml": "Code", "yaml": "Code", "yml": "Code", "toml": "Code",
+    "ini": "Code", "ipynb": "Code",
+    # Fonts
+    "ttf": "Fonts", "otf": "Fonts", "woff": "Fonts", "woff2": "Fonts",
+    # Installers / packages
+    "exe": "Installers", "msi": "Installers", "dmg": "Installers",
+    "pkg": "Installers", "deb": "Installers", "rpm": "Installers",
+    "appimage": "Installers", "apk": "Installers",
+    # Torrents
+    "torrent": "Torrents",
 }
 
 DEFAULT_CATEGORY = "Others"
