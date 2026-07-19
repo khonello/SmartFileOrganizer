@@ -269,8 +269,13 @@ finished. Needs either a liveness check when listing (does the folder still hold
 
 ## Open
 
-- **Rules editing in v1?** A real editor is a meaningful chunk of work; preset
-  selection in the top bar may carry the first version.
+- **Rules editing in v1?** ✅ Settled: the Rules page shows the two layers as two
+  layers — a read-only rule set (the shipped preset the top-bar dropdown picks)
+  under your own editable rules. Your rules save to `config/rules/my_rules.json`
+  and merge above the preset, winning on conflicts. The dropdown stays the
+  starter-set picker; the page is where you see and author. (Editing a *finished
+  run's* rules is still impossible — that forks via a future history-body action;
+  see "Actions per run status".)
 - **Settings as a sidebar page or a dialog?** Page is consistent with the chain;
   dialog is more conventional on Windows and keeps the sidebar on the work.
 - **Filtering the diff.** Many files land in `Others/` or barely move. Worth a

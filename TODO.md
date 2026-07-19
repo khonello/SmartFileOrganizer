@@ -70,10 +70,18 @@ Structure proved in the real medium before any styling. Drives the real
       destinations, collision suffix and all) with badges re-derived from the
       batch's snapshot rules. A resumed run now shows the same honest diff as a
       fresh apply (test: `test_review_plan_reconstructs_diff_from_disk`)
-- [x] Rules page shows the effective rules for the chosen preset (read-only);
-      Settings shows the loaded `Settings` (read-only). Editing both is deferred.
+- [x] Rules page (`gui/rules_panel.py`) — the two layers shown as two layers:
+      a read-only **rule set** under your **editable rules**. Add / edit / delete
+      your own rules via a validated dialog; saved to the managed
+      `config/rules/my_rules.json` (`rule_loader.save_user_rules` /
+      `validate_rule`) and merged above the preset. Editing re-plans the diff —
+      immediately if it's showing, else on the next visit to Organize.
+- [x] Settings page shows the loaded `Settings` (read-only). Editing deferred.
 - [ ] **Cancel**: `apply` can't be interrupted mid-batch; needs a cooperative
       cancellation hook (changes the signature — decide before styling)
+- [ ] Editor doesn't validate destination-template placeholders, so an unknown
+      `{key}` surfaces as an ERROR state on the next scan (recoverable by editing
+      the rule). Consider validating the template on save.
 - [ ] Stale pending runs (folder deleted) stay in the sidebar forever
 - [ ] `review_plan` runs on the UI thread; fine at folder scale, but push it to
       the worker if a resume of a huge folder janks (it re-scans `before/`)

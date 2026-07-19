@@ -19,6 +19,9 @@ from models import MatchType, Rule
 
 PRESETS_DIR = Path(__file__).parent / "presets"
 USER_RULES_DIR = Path(__file__).resolve().parent.parent / "config" / "rules"
+# The single file the in-app editor owns. Users may hand-author other *.json
+# alongside it (all are loaded and merged); this is just the one the GUI writes.
+USER_RULES_FILE = USER_RULES_DIR / "my_rules.json"
 
 
 class RuleValidationError(ValueError):
@@ -103,6 +106,42 @@ def load_user_rules(
                 stacklevel=2,
             )
     return rules
+
+
+def validate_rule(rule: Rule) -> None:
+    """Raise :class:`RuleValidationError` if ``rule`` is unusable.
+
+    The same invariants :func:`_parse_rule` enforces on file load, checked here
+    on a Rule assembled from editor fields *before* it is written to disk — so
+    the app never saves a rule that would then fail to load.
+    """
+    for name in ("rule", "pattern", "destination"):
+        if not str(getattr(rule, name)).strip():
+            raise RuleValidationError(f"{name} is required")
+    if rule.match_type is MatchType.METADATA and not str(
+        rule.metadata_key or ""
+    ).strip():
+        raise RuleValidationError(
+            "a metadata rule needs a metadata_key naming the field to match"
+        )
+
+
+def save_user_rules(
+    rules: list[Rule], *, path: Path | str | None = None
+) -> Path:
+    """Persist the user's editable rule set to a single managed JSON file.
+
+    Writes ``config/rules/my_rules.json`` by default — the file the shipped
+    ``_example.json`` tells users to create. It is only one of the user rule
+    files the loader merges, but the only one the in-app editor owns, so hand-
+    authored files beside it are left alone. Overwrites wholesale: pass the
+    complete desired list, and an empty list writes an empty rule set.
+    """
+    path = Path(path) if path is not None else USER_RULES_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"rules": [rule_to_dict(r) for r in rules]}
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return path
 
 
 def merge_rules(user_rules: list[Rule], preset_rules: list[Rule]) -> list[Rule]:

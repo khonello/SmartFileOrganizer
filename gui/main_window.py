@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 )
 
 from gui.preview_tree import DiffPanes
+from gui.rules_panel import RulesPanel
 from gui.settings_panel import Inspector
 from gui.worker import Worker
 from history.database import HistoryDB
@@ -111,6 +112,7 @@ class MainWindow(QMainWindow):
         self.batch_id: str | None = None
         self.viewing: Batch | None = None  # the history entry being browsed
         self._page = "organize"  # which sidebar page the body is showing
+        self._needs_rescan = False  # rules/set changed while off the Organize page
         self._worker: Worker | None = None
 
         self._build()
@@ -150,7 +152,7 @@ class MainWindow(QMainWindow):
         choose.clicked.connect(self._choose_folder)
         row.addWidget(choose)
 
-        row.addWidget(QLabel("Rules:"))
+        row.addWidget(QLabel("Rule set:"))
         self.preset_combo = QComboBox()
         self.preset_combo.addItem("(none)")
         self.preset_combo.addItems(rule_loader.available_presets())
@@ -194,7 +196,11 @@ class MainWindow(QMainWindow):
 
         self.placeholder = QLabel()
         self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.body.addWidget(self.placeholder)  # 2: rules / settings
+        self.body.addWidget(self.placeholder)  # 2: settings
+
+        self.rules_panel = RulesPanel()
+        self.rules_panel.rules_changed.connect(self._rules_edited)
+        self.body.addWidget(self.rules_panel)  # 3: rules
         return self.body
 
     def _build_bottom_bar(self) -> QWidget:
@@ -283,7 +289,10 @@ class MainWindow(QMainWindow):
                 return "Scanning…"
             case AppState.PREVIEW:
                 folders = len({r.destination.parent for r in self.plan})
-                return f"{len(self.plan)} files → {folders} folders · {preset}"
+                return (
+                    f"{len(self.plan)} files → {folders} folders "
+                    f"· rule set: {preset}"
+                )
             case AppState.NO_SPACE:
                 return self._space_message
             case AppState.APPLYING:
@@ -299,7 +308,7 @@ class MainWindow(QMainWindow):
                 return "Restored — the folder is back as it was."
             case AppState.HISTORY:
                 if self._page == "rules":
-                    return "Rules in effect — read-only in this version."
+                    return "Your rules apply on top of the rule set and win."
                 if self._page == "settings":
                     return "Settings — read-only in this version."
                 return self._history_status()
@@ -331,19 +340,27 @@ class MainWindow(QMainWindow):
         if page == "organize":
             self.body.setCurrentIndex(0)
             self.viewing = None
-            self._set_state(self._organize_state())
+            # A rule/set change made off this page left the plan stale; catch up.
+            if self._needs_rescan and self.folder is not None:
+                self._needs_rescan = False
+                self._scan()
+            else:
+                self._set_state(self._organize_state())
         elif page == "history_root":
             self.body.setCurrentIndex(1)
             self.viewing = None
             self.history_view.setText("Select a run.")
             self._set_state(AppState.HISTORY)
-        elif page in {"rules", "settings"}:
+        elif page == "rules":
+            self.rules_panel.set_rule_set(self._current_preset())
+            self.body.setCurrentWidget(self.rules_panel)
+            self.viewing = None
+            self._set_state(AppState.HISTORY)
+        elif page == "settings":
             self.body.setCurrentIndex(2)
             self.viewing = None
             self.placeholder.setAlignment(Qt.AlignmentFlag.AlignTop)
-            self.placeholder.setText(
-                self._rules_text() if page == "rules" else self._settings_text()
-            )
+            self.placeholder.setText(self._settings_text())
             self._set_state(AppState.HISTORY)
         else:  # a run
             self.viewing = items[0].data(0, _BATCH_ROLE)
@@ -351,37 +368,17 @@ class MainWindow(QMainWindow):
             self._show_batch(self.viewing)
             self._set_state(AppState.HISTORY)
 
-    def _rules_text(self) -> str:
-        """The rules that would fire right now — read-only inventory.
-
-        This is where "what's actually in this preset" lives (the top-bar
-        dropdown just picks one); the badges then show which of these fired.
-        """
+    def _current_preset(self) -> str | None:
+        """The chosen rule set, or ``None`` for the "(none)" entry."""
         preset = self.preset_combo.currentText()
-        preset = None if preset == "(none)" else preset
-        rules = rule_loader.load_effective_rules(preset)
-        if not rules:
-            return (
-                f"No rules in effect for {preset or '(none)'}.\n\n"
-                "Files fall back to the extension layer (badge E)."
-            )
-        body = "\n".join(
-            f"  {r.priority:>3}  {r.rule}\n"
-            f"        [{r.match_type.value}: {r.pattern}]  →  {r.destination}"
-            for r in sorted(rules, key=lambda r: (-r.priority, r.rule))
-        )
-        return (
-            f"Rules in effect — {preset or '(none)'}  ({len(rules)} rules)\n"
-            f"Higher priority wins within a layer.\n\n{body}\n\n"
-            "Read-only in this version."
-        )
+        return None if preset == "(none)" else preset
 
     def _settings_text(self) -> str:
         """The loaded settings, read-only — the source of the run's defaults."""
         s = self.settings
         return (
             "Settings — read-only in this version.\n\n"
-            f"  Default preset:      {s.default_preset}\n"
+            f"  Default rule set:    {s.default_preset}\n"
             f"  Collision strategy:  {s.collision_strategy.value}\n"
             f"  History retention:   {s.history_retention_days} days"
             f"{'  (keep forever)' if s.history_retention_days == 0 else ''}\n"
@@ -411,10 +408,10 @@ class MainWindow(QMainWindow):
             f"  Folder:     {batch.folder}\n"
             f"  When:       {batch.started_at:%Y-%m-%d %H:%M}\n"
             f"  Status:     {batch.status.value}\n"
-            f"  Preset:     {batch.preset or '(none)'}\n"
+            f"  Rule set:   {batch.preset or '(none)'}\n"
             f"  Collisions: {batch.collision_strategy.value}\n\n"
             f"Rules as they were when this run happened "
-            f"(a snapshot — editing a preset since then hasn't changed this):\n"
+            f"(a snapshot — editing a rule set since then hasn't changed this):\n"
             f"{rules or '    (none)'}"
         )
 
@@ -435,8 +432,7 @@ class MainWindow(QMainWindow):
     # -- the pipeline --------------------------------------------------------
 
     def _organizer(self) -> Organizer:
-        preset = self.preset_combo.currentText()
-        preset = None if preset == "(none)" else preset
+        preset = self._current_preset()
         rules = rule_loader.load_effective_rules(preset)
         return Organizer(
             rules,
@@ -477,12 +473,30 @@ class MainWindow(QMainWindow):
         self._set_state(AppState.RESUME)
 
     def _preset_changed(self) -> None:
-        if self.folder is not None and self.state in {
-            AppState.PREVIEW,
-            AppState.EMPTY,
-            AppState.NO_SPACE,
-        }:
+        # Switching the rule set is visible even with no folder: the Rules page
+        # reflects it live. Then re-plan (or mark stale) so the diff follows.
+        if self._page == "rules":
+            self.rules_panel.set_rule_set(self._current_preset())
+        self._replan_after_rules_change()
+
+    def _rules_edited(self) -> None:
+        """Your rules changed on disk (via the Rules page) — the plan follows."""
+        self._replan_after_rules_change()
+
+    def _replan_after_rules_change(self) -> None:
+        """Re-plan now if the diff is showing; else mark it stale for later.
+
+        Rules can be edited from the Rules page, where the Organize diff isn't
+        visible, so re-scanning then would be wasted and off-screen. Defer it to
+        the next visit to Organize (see ``_nav_changed``). A scaffolded folder is
+        left alone — its plan is already committed to disk as before/ + after/.
+        """
+        if self.folder is None:
+            return
+        if self.state in {AppState.PREVIEW, AppState.EMPTY, AppState.NO_SPACE}:
             self._scan()
+        elif not Organizer.is_scaffolded(self.folder):
+            self._needs_rescan = True
 
     def _scan(self) -> None:
         folder = self.folder
