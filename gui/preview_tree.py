@@ -55,7 +55,9 @@ class DiffPanes(QSplitter):
         self.after = self._make_tree("After (proposed)")
         self.addWidget(self.before)
         self.addWidget(self.after)
-        self.setSizes([400, 600])
+        # Equal halves: a diff's two sides are peers. An unequal split would
+        # quietly tell the eye one side matters more, undercutting "compare".
+        self.setSizes([500, 500])
 
         # Counterpart lookup, both directions -- this is what makes the panes a
         # diff rather than two independent lists.
@@ -71,25 +73,36 @@ class DiffPanes(QSplitter):
 
     # -- population ----------------------------------------------------------
 
-    def show_plan(self, folder: Path, plan: list[ClassificationResult]) -> None:
-        """Render a plan into both panes.
+    def show_plan(
+        self,
+        plan: list[ClassificationResult],
+        *,
+        before_root: Path,
+        after_root: Path,
+    ) -> None:
+        """Render a plan into both panes as a diff.
 
-        In Review the plan still describes exactly what is on disk, so it backs
-        both states. TODO: once Review can be entered from a *resumed* session
-        the panes must be read from ``before/``/``after/`` instead — there is no
-        plan in memory then.
+        The two panes have different roots, so they are passed explicitly:
+
+        * Preview — ``before_root`` is the folder itself (originals sit at the
+          root), ``after_root`` is the proposed ``after/`` tree.
+        * Review/Resume — ``before_root`` is the real ``before/`` and
+          ``after_root`` the real ``after/``; the plan is reconstructed from
+          disk by :meth:`organizer.Organizer.review_plan`.
+
+        Either way each ``result`` carries the rule layer, so the badges and the
+        inspector trace work identically in both states.
         """
         self.clear_panes()
-        base = folder / "after"
 
         before_nodes: dict[Path, QTreeWidgetItem] = {}
         after_nodes: dict[Path, QTreeWidgetItem] = {}
 
         for result in plan:
-            source_rel = result.entry.path.relative_to(folder)
+            source_rel = result.entry.path.relative_to(before_root)
             left = self._ensure_path(self.before, before_nodes, source_rel)
 
-            dest_rel = result.destination.relative_to(base)
+            dest_rel = result.destination.relative_to(after_root)
             right = self._ensure_path(self.after, after_nodes, dest_rel)
             right.setText(1, _BADGE.get(result.layer, "?"))
             right.setToolTip(1, f"{result.layer.value} — {result.rule_name}")

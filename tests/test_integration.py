@@ -18,7 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from history.database import HistoryDB
-from models import BatchStatus, OperationType
+from models import BatchStatus, OperationType, RuleLayer
 from organizer import Organizer
 
 # A "Downloads"-shaped folder: loose files at the root, a couple of nested
@@ -151,6 +151,50 @@ def test_end_to_end_apply_then_commit(tmp_path: Path):
         assert db.get_batch(batch_id).status is BatchStatus.COMMITTED
         assert organizer.pending_batch(folder) is None
         assert not organizer.is_scaffolded(folder)
+
+
+# -- resume: the diff rebuilt from disk --------------------------------------
+
+
+def test_review_plan_reconstructs_diff_from_disk(tmp_path: Path):
+    """After apply, the before/after diff is rebuilt from disk, not memory.
+
+    Review is a fact about the filesystem: a run resumed in a later session has
+    no plan in memory, so ``review_plan`` reconstructs the rows from the
+    operation log (the actual destinations, collision suffix and all) and
+    re-derives each row's layer from the batch's snapshot rules. Rendered by the
+    GUI, this is what makes a resumed run show the same honest diff as a fresh
+    apply.
+    """
+    folder = _build_sample_folder(tmp_path)
+
+    with HistoryDB(":memory:") as db:
+        organizer = Organizer(history=db, preset="downloads_cleanup")
+        organizer.apply(folder, organizer.build_plan(folder))
+
+        # A fresh Organizer, no in-memory plan -- exactly a resumed session.
+        resumed = Organizer(history=db, preset="downloads_cleanup")
+        results = resumed.review_plan(folder)
+
+        # One row per staged original.
+        assert len(results) == len(SAMPLE_FILES)
+
+        before, after = folder / "before", folder / "after"
+        for result in results:
+            # The source is a real staged file under before/, the destination a
+            # real organized file under after/.
+            assert before in result.entry.path.parents
+            assert result.entry.path.is_file()
+            assert after in result.destination.parents
+            assert result.destination.is_file()
+
+        # The log's actual destinations are used, so the collision suffix shows.
+        dest_names = sorted(r.destination.name for r in results)
+        assert "notes.txt" in dest_names
+        assert "notes (1).txt" in dest_names
+
+        # Layers came from the snapshot rules -- not everything fell back to E.
+        assert {r.layer for r in results} - {RuleLayer.EXTENSION}
 
 
 # -- apply -> rollback -------------------------------------------------------

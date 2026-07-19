@@ -65,12 +65,18 @@ Structure proved in the real medium before any styling. Drives the real
 - [x] Threading — and it immediately found two real bugs (see `UI_STRUCTURE.md`):
       `HistoryDB` needed a lock, and a stale `QThread` handle crashed the app on
       close after any run
+- [x] Review/Resume panes read from `before/`/`after/` on disk via
+      `Organizer.review_plan` — rebuilt from the operation log (actual
+      destinations, collision suffix and all) with badges re-derived from the
+      batch's snapshot rules. A resumed run now shows the same honest diff as a
+      fresh apply (test: `test_review_plan_reconstructs_diff_from_disk`)
+- [x] Rules page shows the effective rules for the chosen preset (read-only);
+      Settings shows the loaded `Settings` (read-only). Editing both is deferred.
 - [ ] **Cancel**: `apply` can't be interrupted mid-batch; needs a cooperative
       cancellation hook (changes the signature — decide before styling)
-- [ ] Review panes should read from `before/`/`after/` on disk; today they render
-      the in-memory plan, so a *resumed* run shows a placeholder
-- [ ] Rules and Settings pages are placeholders
 - [ ] Stale pending runs (folder deleted) stay in the sidebar forever
+- [ ] `review_plan` runs on the UI thread; fine at folder scale, but push it to
+      the worker if a resume of a huge folder janks (it re-scans `before/`)
 
 ### 2D — Styling (after the anchor)
 - [ ] QSS design tokens + fonts; window chrome

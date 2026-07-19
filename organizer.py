@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from pathlib import Path
 
 from core import file_ops
@@ -180,6 +181,45 @@ class Organizer:
             return None
         pending = self.history.pending_batches(Path(folder))
         return pending[0] if pending else None
+
+    def review_plan(self, folder: Path | str) -> list[ClassificationResult]:
+        """Rebuild the before/after diff for a run awaiting review, from disk.
+
+        A run's state lives on disk, so a review can be entered with no plan in
+        memory — right after a fresh :meth:`apply`, or when resuming a run left
+        by an earlier session. The rows are reconstructed from the operation log
+        (the actual staged→organized pairs, collision suffix and all), and each
+        row's rule layer is re-derived by classifying the staged file against
+        the batch's **snapshot** rules, so the badges reflect the rules that
+        were in force when the run happened — not today's presets.
+
+        Returns an empty list when there is no history, no pending run, or no
+        staged ``before/`` on disk.
+        """
+        folder = Path(folder)
+        before = folder / BEFORE_DIR
+        if self.history is None:
+            return []
+        batch = self.pending_batch(folder)
+        if batch is None or not before.exists():
+            return []
+
+        # The log holds where each staged file *actually* landed (a collision
+        # may have suffixed it); prefer that over the freshly-recomputed path.
+        actual_dest = {
+            Path(op.source_path): Path(op.destination_path)
+            for op in self.history.operations_for_batch(batch.batch_id)
+        }
+        classifier = Classifier(batch.rules)
+        base = folder / AFTER_DIR
+        results: list[ClassificationResult] = []
+        for entry in scan(before):
+            result = classifier.classify(entry, base=base)
+            dest = actual_dest.get(entry.path)
+            if dest is not None:
+                result = replace(result, destination=dest)
+            results.append(result)
+        return results
 
     @staticmethod
     def is_scaffolded(folder: Path | str) -> bool:

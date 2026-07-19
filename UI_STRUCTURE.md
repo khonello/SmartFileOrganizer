@@ -137,7 +137,11 @@ not "here are two trees" — it is answering **where did this file go, and why**
   each time:
   - `Preview`: left = the folder as it is now; right = the proposed tree, drawn
     from `build_plan`. Nothing exists on disk yet.
-  - `Review`: left = the real `before/`; right = the real `after/`.
+  - `Review`: left = the real `before/`; right = the real `after/`. Rebuilt
+    from disk by `Organizer.review_plan` (the operation log gives the actual
+    staged→organized pairs; the batch's snapshot rules re-derive each badge), so
+    a run *resumed* from an earlier session — no plan in memory — shows the same
+    honest diff, badges and all, as one just applied.
   - `Committed`: nothing to compare — **collapse to one pane.** Do not keep an
     empty half.
 
@@ -196,8 +200,14 @@ The chain, made concrete. A history entry's status determines its action set:
 | Status | Enabled | Disabled | Why |
 |---|---|---|---|
 | `applied` (pending) | Keep Organized; Restore Original | — | `before/`+`after/` are live on disk. This *is* Resume, reached via the sidebar. |
-| `committed` | Reuse These Rules | **Undo** | Undo is impossible, not unimplemented — see below. |
-| `rolled_back` | Reuse These Rules | Undo | The copies are gone. |
+| `committed` | — | **Undo** | Undo is impossible, not unimplemented — see below. |
+| `rolled_back` | — | Undo | The copies are gone. |
+
+**History is read-only.** You inspect a finished run — its rule trace, where each
+file went — but you do not *act* on it. A committed or rolled-back entry offers no
+buttons at all. This is deliberate: the bottom-bar actions (Organize / Restore
+Original / Keep Organized) are all about the *Organize* body, so the bottom bar
+has one subject, and history is a record rather than a control surface.
 
 **Undo must never be offered after commit.** `commit` deletes `before/` and moves
 the copies from `after/` to the folder root, so the logged destinations cease to
@@ -205,11 +215,15 @@ exist and the originals are gone. `UndoManager` raises `CannotUndoError`; it
 previously reported success and silently did nothing. The UI's job is to never
 put the user in front of that button.
 
-**"Reuse These Rules" is the verb that resolves editing history.** You cannot
-edit what a finished run did. But *"start a new run from these rules"* is
-meaningful — and it forks rather than mutates, so browsing history can never
-change future behavior by surprise. This works because each batch snapshots the
-rules that produced it (`batches.rules_json`).
+**Reuse-a-past-run's-rules is deferred, not dropped.** Re-running with a finished
+run's exact rules only *differs* from picking its preset in the dropdown once
+presets become **editable** — until then a run's snapshot equals the preset that
+produced it, so a dedicated "Reuse These Rules" button would duplicate the
+dropdown. The snapshot (`batches.rules_json`) is still recorded — it powers the
+honest per-run trace — so when an editor lands and snapshots can drift from live
+presets, the bridge returns as an action *inside the history body* ("Start a new
+run from these rules"), living with the run you're viewing rather than as a
+bottom-bar button that is disabled whenever you are not in History.
 
 ---
 

@@ -39,7 +39,7 @@ from gui.preview_tree import DiffPanes
 from gui.settings_panel import Inspector
 from gui.worker import Worker
 from history.database import HistoryDB
-from models import Batch, BatchStatus, ClassificationResult, Rule
+from models import Batch, BatchStatus, ClassificationResult
 from organizer import Organizer
 from rules import rule_loader
 from settings import load_settings
@@ -49,6 +49,28 @@ MINIMUM_SIZE = (960, 600)
 
 _BATCH_ROLE = Qt.ItemDataRole.UserRole
 _PAGE_ROLE = Qt.ItemDataRole.UserRole + 1
+
+# PLACEHOLDER colours — throwaway, NOT a palette decision. They exist only so
+# the button grouping ("colour groups, fork stays adjacent") can be judged in
+# the greybox; real colours arrive with the design anchor (see CLAUDE.md and
+# UI_STRUCTURE.md). The grouping they express: Organize + Keep read as filled/
+# affirmative ("make it real"), Restore as a recessive ghost (the safe way out);
+# Keep is warmed toward caution because it is the one irreversible action.
+_PLACEHOLDER_BUTTON_QSS = """
+QPushButton { padding: 4px 14px; border-radius: 4px; }
+QPushButton[role="affirmative"] {
+    background: #3b6db5; color: white; border: 1px solid #2f5896;
+}
+QPushButton[role="caution"] {
+    background: #c9862b; color: white; border: 1px solid #a86f1f;
+}
+QPushButton[role="quiet"] {
+    background: transparent; color: palette(text); border: 1px solid palette(mid);
+}
+QPushButton:disabled {
+    background: palette(button); color: palette(mid); border: 1px solid palette(mid);
+}
+"""
 
 
 class AppState(Enum):
@@ -88,7 +110,7 @@ class MainWindow(QMainWindow):
         self.plan: list[ClassificationResult] = []
         self.batch_id: str | None = None
         self.viewing: Batch | None = None  # the history entry being browsed
-        self._reuse_rules: list[Rule] | None = None
+        self._page = "organize"  # which sidebar page the body is showing
         self._worker: Worker | None = None
 
         self._build()
@@ -128,7 +150,7 @@ class MainWindow(QMainWindow):
         choose.clicked.connect(self._choose_folder)
         row.addWidget(choose)
 
-        row.addWidget(QLabel("Preset:"))
+        row.addWidget(QLabel("Rules:"))
         self.preset_combo = QComboBox()
         self.preset_combo.addItem("(none)")
         self.preset_combo.addItems(rule_loader.available_presets())
@@ -176,7 +198,14 @@ class MainWindow(QMainWindow):
         return self.body
 
     def _build_bottom_bar(self) -> QWidget:
-        """Status left (clickable), actions right — opposites side by side."""
+        """Status left (clickable), actions right.
+
+        Layout follows the "colour groups, fork stays adjacent" decision:
+        Organize sits apart from the Restore|Keep pair, and that pair stays
+        side by side so the irreversible choice is never seen without its safe
+        twin. The Organize↔Keep kinship (both affirmative) is carried by colour
+        via the ``role`` property, not by position.
+        """
         bar = QFrame()
         bar.setFrameShape(QFrame.Shape.StyledPanel)
         row = QHBoxLayout(bar)
@@ -197,15 +226,21 @@ class MainWindow(QMainWindow):
         self.btn_restore.clicked.connect(self._rollback)
         self.btn_keep = QPushButton("Keep Organized")
         self.btn_keep.clicked.connect(self._commit)
-        self.btn_reuse = QPushButton("Reuse These Rules")
-        self.btn_reuse.clicked.connect(self._reuse)
-        for button in (
-            self.btn_organize,
-            self.btn_restore,
-            self.btn_keep,
-            self.btn_reuse,
-        ):
-            row.addWidget(button)
+
+        # role drives the placeholder colour (see _PLACEHOLDER_BUTTON_QSS).
+        self.btn_organize.setProperty("role", "affirmative")
+        self.btn_keep.setProperty("role", "caution")
+        self.btn_restore.setProperty("role", "quiet")
+
+        # status (stretch above) pushes the whole action cluster right; a fixed
+        # gap — not a stretch — separates Organize from the Restore|Keep fork so
+        # they read as one group on the right rather than Organize floating.
+        row.addWidget(self.btn_organize)
+        row.addSpacing(20)
+        row.addWidget(self.btn_restore)
+        row.addWidget(self.btn_keep)
+
+        bar.setStyleSheet(_PLACEHOLDER_BUTTON_QSS)
         return bar
 
     # -- the chain: state -> what is legal -----------------------------------
@@ -219,13 +254,8 @@ class MainWindow(QMainWindow):
         self.btn_restore.setEnabled(pending)
         self.btn_keep.setEnabled(pending)
 
-        # A committed run can never be undone -- only its rules reused. Undo is
-        # impossible past commit, so the UI must never offer it.
-        self.btn_reuse.setEnabled(
-            state is AppState.HISTORY
-            and self.viewing is not None
-            and self.viewing.status is not BatchStatus.APPLIED
-        )
+        # History is read-only: you inspect a past run, you don't act on it.
+        # (Undo is impossible past commit; reuse waits for an editable ruleset.)
 
         self.btn_organize.setText(
             f"Organize {len(self.plan)} Files" if self.plan else "Organize"
@@ -268,6 +298,10 @@ class MainWindow(QMainWindow):
             case AppState.ROLLED_BACK:
                 return "Restored — the folder is back as it was."
             case AppState.HISTORY:
+                if self._page == "rules":
+                    return "Rules in effect — read-only in this version."
+                if self._page == "settings":
+                    return "Settings — read-only in this version."
                 return self._history_status()
             case _:
                 return self._error_message
@@ -292,6 +326,7 @@ class MainWindow(QMainWindow):
         if not items:
             return
         page = items[0].data(0, _PAGE_ROLE)
+        self._page = page
 
         if page == "organize":
             self.body.setCurrentIndex(0)
@@ -305,13 +340,53 @@ class MainWindow(QMainWindow):
         elif page in {"rules", "settings"}:
             self.body.setCurrentIndex(2)
             self.viewing = None
-            self.placeholder.setText(f"[{page.title()} — not built yet]")
-            self._set_state(AppState.HISTORY if page == "rules" else AppState.HISTORY)
+            self.placeholder.setAlignment(Qt.AlignmentFlag.AlignTop)
+            self.placeholder.setText(
+                self._rules_text() if page == "rules" else self._settings_text()
+            )
+            self._set_state(AppState.HISTORY)
         else:  # a run
             self.viewing = items[0].data(0, _BATCH_ROLE)
             self.body.setCurrentIndex(1)
             self._show_batch(self.viewing)
             self._set_state(AppState.HISTORY)
+
+    def _rules_text(self) -> str:
+        """The rules that would fire right now — read-only inventory.
+
+        This is where "what's actually in this preset" lives (the top-bar
+        dropdown just picks one); the badges then show which of these fired.
+        """
+        preset = self.preset_combo.currentText()
+        preset = None if preset == "(none)" else preset
+        rules = rule_loader.load_effective_rules(preset)
+        if not rules:
+            return (
+                f"No rules in effect for {preset or '(none)'}.\n\n"
+                "Files fall back to the extension layer (badge E)."
+            )
+        body = "\n".join(
+            f"  {r.priority:>3}  {r.rule}\n"
+            f"        [{r.match_type.value}: {r.pattern}]  →  {r.destination}"
+            for r in sorted(rules, key=lambda r: (-r.priority, r.rule))
+        )
+        return (
+            f"Rules in effect — {preset or '(none)'}  ({len(rules)} rules)\n"
+            f"Higher priority wins within a layer.\n\n{body}\n\n"
+            "Read-only in this version."
+        )
+
+    def _settings_text(self) -> str:
+        """The loaded settings, read-only — the source of the run's defaults."""
+        s = self.settings
+        return (
+            "Settings — read-only in this version.\n\n"
+            f"  Default preset:      {s.default_preset}\n"
+            f"  Collision strategy:  {s.collision_strategy.value}\n"
+            f"  History retention:   {s.history_retention_days} days"
+            f"{'  (keep forever)' if s.history_retention_days == 0 else ''}\n"
+            f"  History database:    {s.history_db_path}\n"
+        )
 
     def _organize_state(self) -> AppState:
         """The state Organize returns to — the run's state lives on disk."""
@@ -362,11 +437,7 @@ class MainWindow(QMainWindow):
     def _organizer(self) -> Organizer:
         preset = self.preset_combo.currentText()
         preset = None if preset == "(none)" else preset
-        rules = (
-            self._reuse_rules
-            if self._reuse_rules is not None
-            else rule_loader.load_effective_rules(preset)
-        )
+        rules = rule_loader.load_effective_rules(preset)
         return Organizer(
             rules,
             collision_strategy=self.settings.collision_strategy,
@@ -402,14 +473,10 @@ class MainWindow(QMainWindow):
         )
         self.batch_id = pending.batch_id if pending else None
         self.plan = []
-        self.panes.show_message(
-            "[before/ — read from disk: not built yet]",
-            "[after/ — read from disk: not built yet]",
-        )
+        self._render_review()  # the staged before/ and after/ are real on disk
         self._set_state(AppState.RESUME)
 
     def _preset_changed(self) -> None:
-        self._reuse_rules = None  # an explicit preset choice overrides a reuse
         if self.folder is not None and self.state in {
             AppState.PREVIEW,
             AppState.EMPTY,
@@ -448,7 +515,9 @@ class MainWindow(QMainWindow):
             self.panes.show_message("[folder is empty]", "[nothing to organize]")
             self._set_state(AppState.EMPTY)
             return
-        self.panes.show_plan(self.folder, plan)
+        self.panes.show_plan(
+            plan, before_root=self.folder, after_root=self.folder / "after"
+        )
         self._set_state(AppState.PREVIEW)
 
     def _apply(self) -> None:
@@ -468,7 +537,31 @@ class MainWindow(QMainWindow):
     def _applied(self, batch_id: object) -> None:
         self.batch_id = str(batch_id)
         self._refresh_history()
+        self._render_review()  # redraw from the real before/ and after/ on disk
         self._set_state(AppState.REVIEW)
+
+    def _render_review(self) -> None:
+        """Draw the real ``before/`` vs ``after/`` — fresh apply or resume.
+
+        Review is a fact about the filesystem, not in-memory state, so it is
+        always rendered from disk (via ``Organizer.review_plan``). That way a
+        run resumed from a previous session shows the same honest diff, badges
+        and all, as one just applied.
+        """
+        folder = self.folder
+        if folder is None:
+            return
+        results = self._organizer().review_plan(folder)
+        if results:
+            self.panes.show_plan(
+                results,
+                before_root=folder / "before",
+                after_root=folder / "after",
+            )
+        else:
+            self.panes.show_message(
+                "[before/ — nothing staged]", "[after/ — nothing organized]"
+            )
 
     def _commit(self) -> None:
         if self.folder is None:
@@ -495,17 +588,14 @@ class MainWindow(QMainWindow):
 
     def _finish(self, state: AppState) -> None:
         self.batch_id = None
+        # before/ and after/ are gone now, so the diff can't be shown; say what
+        # the folder holds instead.
+        if state is AppState.COMMITTED:
+            self.panes.show_message("", "[Organized — moved into the folder root]")
+        elif state is AppState.ROLLED_BACK:
+            self.panes.show_message("[Restored — the folder is back as it was]", "")
         self._refresh_history()
         self._set_state(state)
-
-    def _reuse(self) -> None:
-        """Fork a finished run's rules into a new one — never mutate history."""
-        if self.viewing is None:
-            return
-        self._reuse_rules = list(self.viewing.rules)
-        self.sidebar.setCurrentItem(self.nav_organize)
-        if self.folder is not None:
-            self._scan()
 
     # -- worker plumbing -----------------------------------------------------
 
