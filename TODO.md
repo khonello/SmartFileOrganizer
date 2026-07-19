@@ -43,11 +43,14 @@ source of truth — read it before building any of 2C.
 - [x] Per-run rule snapshot, so history is reproducible — **landed** (`batches`)
 - [x] Dropped the dry-run toggle: Preview *is* the dry run
 
-### 2B — Design direction (blocked)
-- [ ] **Get an anchor from the user** (reference app / screenshot / palette / mood)
-- [ ] Agree a design language, then write it up as a fresh design spec
-- [ ] Build a self-contained HTML prototype to validate look/feel before Qt
-- [ ] **Review with user, iterate until approved**
+### 2B — Design direction  ✅ anchored → **`DESIGN.md`**
+- [x] **Anchor from the user**: neutral base + single amber accent
+      (`#000000 #14213d #fca311 #e5e5e5 #ffffff`), chosen over a monochrome blue
+      ramp because this app needs hue contrast for caution and for the badges
+- [x] Design language written up as a fresh spec — `DESIGN.md` (tokens, button
+      roles, badges, diff, light+dark, contrast rules)
+- [~] No HTML prototype — QSS ≠ HTML, and the greybox already validates the
+      structure in the real medium; styling goes straight onto it (see 2D)
 
 ### 2C — Greybox shell  ✅ built (unstyled, run it: `python main.py`)
 Structure proved in the real medium before any styling. Drives the real
@@ -79,9 +82,10 @@ Structure proved in the real medium before any styling. Drives the real
 - [x] Settings page shows the loaded `Settings` (read-only). Editing deferred.
 - [ ] **Cancel**: `apply` can't be interrupted mid-batch; needs a cooperative
       cancellation hook (changes the signature — decide before styling)
-- [ ] Editor doesn't validate destination-template placeholders, so an unknown
-      `{key}` surfaces as an ERROR state on the next scan (recoverable by editing
-      the rule). Consider validating the template on save.
+- [x] Editor validates destination-template placeholders on save
+      (`classifier.validate_destination_template`, via `rule_loader.validate_rule`):
+      a typo'd or malformed `{key}` is rejected in the dialog naming what's
+      available, instead of surfacing as an ERROR state on the next scan.
 - [ ] Stale pending runs (folder deleted) stay in the sidebar forever
 - [ ] `review_plan` runs on the UI thread; fine at folder scale, but push it to
       the worker if a resume of a huge folder janks (it re-scans `before/`)

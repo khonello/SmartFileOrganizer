@@ -97,3 +97,21 @@ def test_validate_rule_metadata_needs_a_key():
             metadata_key="author",
         )
     )
+
+
+def test_validate_rule_rejects_unknown_template_placeholder():
+    """A typo'd placeholder is caught at save, not as a failed scan later."""
+    with pytest.raises(RuleValidationError, match="unknown placeholder"):
+        rule_loader.validate_rule(Rule("x", "*", "Documents/{yeer}"))
+
+
+def test_validate_rule_rejects_malformed_template():
+    with pytest.raises(RuleValidationError, match="malformed"):
+        rule_loader.validate_rule(Rule("x", "*", "Documents/{year"))
+
+
+def test_validate_rule_accepts_known_placeholders():
+    # Reserved date/name fields and a metadata key all resolve.
+    rule_loader.validate_rule(
+        Rule("x", "*", "Documents/{year}/{month}/{project}/{author}")
+    )

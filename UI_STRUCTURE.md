@@ -280,5 +280,6 @@ finished. Needs either a liveness check when listing (does the folder still hold
   dialog is more conventional on Windows and keeps the sidebar on the work.
 - **Filtering the diff.** Many files land in `Others/` or barely move. Worth a
   "show only changed" filter so the diff highlights what actually changed.
-- **Visual direction.** Blocked on an anchor from the user. Nothing in this
-  document depends on it.
+- **Visual direction.** ✅ Anchored: a neutral base with a single amber accent —
+  see `DESIGN.md`. Nothing in this document depended on it; the greybox's `role`
+  hooks and badge slots are where it attaches.

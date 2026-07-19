@@ -124,6 +124,16 @@ def validate_rule(rule: Rule) -> None:
         raise RuleValidationError(
             "a metadata rule needs a metadata_key naming the field to match"
         )
+    # The destination template's placeholders must be real fields, or the rule
+    # would only fail later at plan time. Lazily imported: the classifier owns
+    # the placeholder vocabulary, but this module is imported widely (down to
+    # history.database) and should not pull core in on every import.
+    from core.classifier import validate_destination_template
+
+    try:
+        validate_destination_template(rule.destination)
+    except ValueError as exc:
+        raise RuleValidationError(str(exc)) from exc
 
 
 def save_user_rules(
